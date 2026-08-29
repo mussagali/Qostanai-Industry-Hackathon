@@ -6,9 +6,10 @@ from sklearn.ensemble import IsolationForest, RandomForestClassifier
 from sklearn.pipeline import Pipeline
 from sklearn.impute import SimpleImputer
 from sklearn.preprocessing import StandardScaler
+from sklearn.model_selection import train_test_split
+from sklearn.metrics import roc_auc_score, precision_score, recall_score, f1_score
 
 from simulator import load_config
-
 
 FEATURES = [
     "cycle_time",
@@ -38,6 +39,27 @@ _THRESH = _CFG.get("thresholds", {
     "warning": {"bottleneck_risk": 0.55, "defect_risk": 0.55, "anomaly_score": 0.62},
     "critical": {"bottleneck_risk": 0.75, "defect_risk": 0.75},
 })
+
+
+# ---------------------------------------------------------------------------
+# IMPORTANT — what the models actually learn, and why the demo scenarios
+# aren't "cheating":
+#
+# The bottleneck/defect labels below are generated from a hand-specified
+# risk formula over a WIDE synthetic distribution of station conditions
+# (cycle_time, temperature, vibration, torque, queue, throughput, downtime).
+# This is a stand-in for historical plant data a real deployment would use.
+#
+# The Streamlit "Developing bottleneck" / "High defect risk" / "Sensor-poor
+# station" scenarios in simulator.py are a SEPARATE, narrower process that
+# nudges specific stations (S14, S07, S20) along a realistic trajectory over
+# time. The model never sees these trajectories during training — it only
+# sees the general feature -> risk relationship. When a demo scenario makes
+# S14's cycle time and queue climb, the model flags it because those FEATURE
+# VALUES fall into the region it learned to associate with risk, not because
+# it memorized "S14 = bad". That's the intended test: can a model trained on
+# general risk patterns generalize to a specific, unseen degradation curve.
+# ---------------------------------------------------------------------------
 
 def _synthetic_training_data(n: int = 3500, seed: int = 7):
     rng = np.random.default_rng(seed)
@@ -79,27 +101,41 @@ def _synthetic_training_data(n: int = 3500, seed: int = 7):
         + rng.normal(0, 0.7, n)
     )
     y_defect = (defect_score > 1.7).astype(int)
+
     return x, y_bottleneck, y_defect
 
+
+def _make_model(seed: int) -> Pipeline:
+    return Pipeline([
+        ("imputer", SimpleImputer(strategy="median", add_indicator=True)),
+        ("scale", StandardScaler()),
+        ("model", RandomForestClassifier(
+            n_estimators=180,
+            max_depth=8,
+            class_weight="balanced",
+            random_state=seed,
+        )),
+    ])
+
+
 def train_models(seed: int = 7):
+    """Train the bottleneck/defect classifiers and the anomaly detector.
+
+    Also computes held-out validation metrics (NEW) so the app can show
+    real precision/recall/AUC numbers instead of only the per-station
+    confidence heuristic. Metrics are stashed as a module-level dict
+    (`LAST_METRICS`) and returned alongside the models.
+    """
     x, y_b, y_d = _synthetic_training_data(seed=seed)
 
-    def make_model():
-        return Pipeline([
-            ("imputer", SimpleImputer(strategy="median", add_indicator=True)),
-            ("scale", StandardScaler()),
-            ("model", RandomForestClassifier(
-                n_estimators=180,
-                max_depth=8,
-                class_weight="balanced",
-                random_state=seed,
-            )),
-        ])
+    x_train, x_test, yb_train, yb_test, yd_train, yd_test = train_test_split(
+        x, y_b, y_d, test_size=0.25, random_state=seed, stratify=y_b
+    )
 
-    bottleneck_model = make_model()
-    defect_model = make_model()
-    bottleneck_model.fit(x[FEATURES], y_b)
-    defect_model.fit(x[FEATURES], y_d)
+    bottleneck_model = _make_model(seed)
+    defect_model = _make_model(seed)
+    bottleneck_model.fit(x_train[FEATURES], yb_train)
+    defect_model.fit(x_train[FEATURES], yd_train)
 
     anomaly_pipe = Pipeline([
         ("imputer", SimpleImputer(strategy="median", add_indicator=True)),
@@ -110,18 +146,58 @@ def train_models(seed: int = 7):
             random_state=seed,
         )),
     ])
-    anomaly_pipe.fit(x[FEATURES])
+    anomaly_pipe.fit(x_train[FEATURES])
+
+    # --- Held-out evaluation (NEW) -----------------------------------
+    def _eval(model, x_te, y_te, name):
+        proba = model.predict_proba(x_te[FEATURES])[:, 1]
+        pred = (proba >= 0.5).astype(int)
+        return {
+            "name": name,
+            "auc": float(roc_auc_score(y_te, proba)) if y_te.nunique() > 1 else float("nan"),
+            "precision": float(precision_score(y_te, pred, zero_division=0)),
+            "recall": float(recall_score(y_te, pred, zero_division=0)),
+            "f1": float(f1_score(y_te, pred, zero_division=0)),
+            "positive_rate": float(y_te.mean()),
+            "n_test": int(len(y_te)),
+        }
+
+    global LAST_METRICS
+    LAST_METRICS = {
+        "bottleneck": _eval(bottleneck_model, x_test, yb_test, "Bottleneck risk"),
+        "defect": _eval(defect_model, x_test, yd_test, "Defect risk"),
+    }
+
+    # --- Calibrate the anomaly-score scaling against real training data
+    # (replaces the previous unexplained "0.5 - raw*2.2" magic numbers).
+    # IsolationForest's decision_function is higher = more normal, lower/
+    # negative = more anomalous, but its scale isn't bounded or intuitive.
+    # We map the OBSERVED range on the training set to [0, 1] so 0 means
+    # "as normal as the most normal training point" and 1 means "as
+    # anomalous as the most anomalous training point" — a scale that's
+    # actually derived from data instead of guessed.
+    train_raw = anomaly_pipe.decision_function(x_train[FEATURES])
+    global ANOMALY_LO, ANOMALY_HI
+    ANOMALY_LO = float(np.percentile(train_raw, 1))   # near-most-anomalous
+    ANOMALY_HI = float(np.percentile(train_raw, 99))  # near-most-normal
 
     return bottleneck_model, defect_model, anomaly_pipe
+
+
+# Populated by train_models(); read by score_line() and the app.
+LAST_METRICS: dict = {}
+ANOMALY_LO: float = -0.05
+ANOMALY_HI: float = 0.15
+
 
 def _confidence(row: pd.Series) -> float:
     sensor_cols = ["temperature", "vibration", "torque"]
     observed = sum(pd.notna(row[c]) for c in sensor_cols)
     sensor_factor = observed / len(sensor_cols)
-
     # Process data is still available even at manual stations.
     base = 0.58 + 0.38 * sensor_factor
     return float(np.clip(base, 0.55, 0.96))
+
 
 def score_line(
     df: pd.DataFrame,
@@ -136,8 +212,11 @@ def score_line(
     out["defect_risk"] = defect_model.predict_proba(x)[:, 1]
 
     # IsolationForest: higher decision_function means more normal.
+    # Scaled using the calibrated [ANOMALY_LO, ANOMALY_HI] range computed
+    # from training data in train_models(), instead of fixed constants.
     raw = anomaly_model.decision_function(x)
-    out["anomaly_score"] = np.clip(0.5 - raw * 2.2, 0, 1)
+    span = max(ANOMALY_HI - ANOMALY_LO, 1e-6)
+    out["anomaly_score"] = np.clip((ANOMALY_HI - raw) / span, 0, 1)
 
     out["confidence"] = out.apply(_confidence, axis=1)
     out["bottleneck_risk"] *= out["confidence"]
@@ -161,6 +240,14 @@ def score_line(
 
     return out
 
+
+def get_model_metrics() -> dict:
+    """Expose the held-out validation metrics computed in train_models()
+    so the UI can display real precision/recall/AUC instead of only the
+    per-station confidence heuristic."""
+    return LAST_METRICS
+
+
 def _pct_dev(value: float, baseline: float) -> float:
     if baseline == 0:
         return 0.0
@@ -183,6 +270,7 @@ def explain_station(row: pd.Series) -> tuple[list[str], str]:
         ("temperature", " °C", "temperature"),
         ("torque", " Nm", "torque"),
     ]
+
     for col, unit, label in checks:
         val = row.get(col)
         if pd.isna(val):

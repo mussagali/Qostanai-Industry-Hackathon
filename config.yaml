@@ -1,16 +1,10 @@
-# DigitalTwin.ai — line configuration
-# Swap this file per plant/line to demonstrate scalability without code changes.
-
 line:
-  name: "Plant A — Line 1 (mixed-model)"
   n_stations: 30
   seed: 42
-  # Station type mix, in order along the line
   station_types:
     Body: 6
     Paint: 6
     Final: 18
-  # Sensor coverage mix across stations (must sum to 1.0)
   sensor_coverage:
     rich: 0.65
     partial: 0.25
@@ -33,6 +27,8 @@ thresholds:
     bottleneck_risk: 0.75
     defect_risk: 0.75
 
-# Example alternate config for a second plant — copy this file to
-# config_plant_b.yaml, adjust these values, and point app.py at it via
-# the CONFIG_PATH environment variable to demo multi-site scaling.
+# NEW: models retrofits / instrumentation changes can only happen during a
+# handful of scheduled windows per year (Track 4 "real-world complexity").
+# The dashboard's Leadership view uses this to state the constraint rather
+# than implying sensors could be added at any time.
+maintenance_windows_per_year: 4

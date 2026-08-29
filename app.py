@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import time
+
 import pandas as pd
 import plotly.express as px
 import streamlit as st
@@ -12,9 +13,9 @@ from simulator import (
     spawn_vehicles,
     advance_vehicles,
     vehicles_at_risk,
+    maintenance_window_note,
 )
-from prediction import train_models, score_line, explain_station
-
+from prediction import train_models, score_line, explain_station, get_model_metrics
 
 st.set_page_config(
     page_title="DigitalTwin.ai — Vehicle Assembly Line",
@@ -25,13 +26,16 @@ st.set_page_config(
 st.title("🏭 DigitalTwin.ai")
 st.caption("Vehicle assembly-line digital twin • bottleneck prediction • defect-risk prediction • uneven sensor coverage")
 
+
 @st.cache_resource
 def get_models():
     return train_models()
 
+
 @st.cache_resource
 def get_config():
     return load_config()
+
 
 bottleneck_model, defect_model, anomaly_model = get_models()
 config = get_config()
@@ -55,8 +59,13 @@ with st.sidebar:
     st.header("Simulation controls")
     scenario = st.selectbox(
         "Scenario",
-        ["Normal", "Developing bottleneck", "High defect risk", "Sensor-poor station"],
+        ["Normal", "Developing bottleneck", "High defect risk", "Sensor-poor station", "Random"],
+        help=(
+            "Random picks 1-3 stations and a random severity/failure mode each run — "
+            "a stress test the model was not tuned against, unlike the scripted scenarios."
+        ),
     )
+
     col1, col2 = st.columns(2)
     with col1:
         advance = st.button("▶ Next step", use_container_width=True)
@@ -89,6 +98,27 @@ with st.sidebar:
     st.markdown("3. Watch Station S14 turn warning/critical")
     st.markdown("4. Switch to **High defect risk** and reset")
     st.markdown("5. Advance 6–10 steps to see S07")
+    st.markdown("6. Try **Random** for an unscripted stress test")
+
+    st.markdown("---")
+    with st.expander("📊 Model validation (held-out test set)"):
+        metrics = get_model_metrics()
+        if not metrics:
+            st.caption("No metrics available yet.")
+        for key, m in metrics.items():
+            st.markdown(f"**{m['name']}**")
+            st.caption(
+                f"AUC {m['auc']:.2f} · Precision {m['precision']:.2f} · "
+                f"Recall {m['recall']:.2f} · F1 {m['f1']:.2f} "
+                f"(n={m['n_test']}, {m['positive_rate']*100:.0f}% positive)"
+            )
+        st.caption(
+            "Computed on a 25% held-out split of the synthetic training "
+            "distribution — not the live scenario data. This shows the "
+            "model generalizes within its training distribution; the "
+            "scenario simulator (below) is a separate, harder test of "
+            "generalization to unseen degradation patterns."
+        )
 
 scored = score_line(
     st.session_state.line,
@@ -106,17 +136,18 @@ if advance:
             [st.session_state.vehicle_log, new_log], ignore_index=True
         )
 
-# History for trend chart
-top_b = scored.sort_values("bottleneck_risk", ascending=False).iloc[0]
-top_d = scored.sort_values("defect_risk", ascending=False).iloc[0]
-st.session_state.history.append({
-    "step": st.session_state.step,
-    "scenario": scenario,
-    "max_bottleneck_risk": float(top_b["bottleneck_risk"]),
-    "max_defect_risk": float(top_d["defect_risk"]),
-    "avg_cycle_time": float(scored["cycle_time"].mean()),
-    "total_queue": int(scored["queue_length"].sum()),
-})
+    # History for trend chart
+    top_b = scored.sort_values("bottleneck_risk", ascending=False).iloc[0]
+    top_d = scored.sort_values("defect_risk", ascending=False).iloc[0]
+    st.session_state.history.append({
+        "step": st.session_state.step,
+        "scenario": scenario,
+        "max_bottleneck_risk": float(top_b["bottleneck_risk"]),
+        "max_defect_risk": float(top_d["defect_risk"]),
+        "avg_cycle_time": float(scored["cycle_time"].mean()),
+        "total_queue": int(scored["queue_length"].sum()),
+    })
+
 # Keep history bounded and avoid repeated entries if user only changes tabs
 hist_df = pd.DataFrame(st.session_state.history).drop_duplicates(
     subset=["step", "scenario"], keep="last"
@@ -153,14 +184,14 @@ with tab1:
             icon = {"Normal": "🟢", "Warning": "🟡", "Critical": "🔴"}[row["status"]]
             st.markdown(
                 f"""
-                **{icon} {row['station_id']} — {row['station_type']}**  
-                Status: **{row['status']}**  
-                Cycle: {row['cycle_time']:.1f}s  
-                Queue: {int(row['queue_length'])}  
-                Bottleneck: {row['bottleneck_risk']*100:.0f}%  
-                Defect: {row['defect_risk']*100:.0f}%  
-                Confidence: {row['confidence']*100:.0f}%
-                """
+**{icon} {row['station_id']} — {row['station_type']}**
+Status: **{row['status']}**
+Cycle: {row['cycle_time']:.1f}s
+Queue: {int(row['queue_length'])}
+Bottleneck: {row['bottleneck_risk']*100:.0f}%
+Defect: {row['defect_risk']*100:.0f}%
+Confidence: {row['confidence']*100:.0f}%
+"""
             )
 
     st.markdown("---")
@@ -199,6 +230,8 @@ with tab1:
         for r in reasons:
             st.write(f"• {r.capitalize()}.")
         st.info(f"Recommended action: {action}")
+        if row["sensor_level"] in ("partial", "manual"):
+            st.caption("🔧 " + maintenance_window_note(config))
 
 with tab2:
     st.subheader("Priority alerts")
@@ -209,6 +242,7 @@ with tab2:
         false_alarm = int((fb["verdict"] == "false_alarm").sum())
         total = confirmed + false_alarm
         acceptance_rate = (confirmed / total * 100) if total else None
+
         m1, m2, m3 = st.columns(3)
         m1.metric("Alerts reviewed", total)
         m2.metric("Confirmed issues", confirmed)
@@ -312,9 +346,12 @@ with tab3:
     ].copy()
     sensor_poor["confidence"] = (sensor_poor["confidence"] * 100).round(0).astype(int).astype(str) + "%"
     st.dataframe(sensor_poor, hide_index=True, use_container_width=True)
+    if not sensor_poor.empty:
+        st.caption("🔧 " + maintenance_window_note(config))
 
 with tab4:
     st.subheader("Leadership / business-case view")
+
     high_risk = int(((scored["bottleneck_risk"] >= 0.65) | (scored["defect_risk"] >= 0.65)).sum())
 
     # Illustrative business-case values — intentionally labeled.
@@ -326,19 +363,44 @@ with tab4:
     x1.metric("High-risk stations detected", high_risk)
     x2.metric("Illustrative downtime avoided", f"{estimated_downtime_avoided} min")
     x3.metric("Illustrative protected value", f"${illustrative_value:,.0f}")
-
     st.caption(
         "Business-case numbers above are illustrative prototype assumptions, not measured plant savings."
     )
 
+    metrics = get_model_metrics()
+    if metrics:
+        st.write("### Model validation (held-out test set)")
+        met_df = pd.DataFrame([
+            {
+                "Model": m["name"],
+                "AUC": f"{m['auc']:.2f}",
+                "Precision": f"{m['precision']:.2f}",
+                "Recall": f"{m['recall']:.2f}",
+                "F1": f"{m['f1']:.2f}",
+            }
+            for m in metrics.values()
+        ])
+        st.dataframe(met_df, hide_index=True, use_container_width=True)
+        st.caption(
+            "These are accuracy metrics for the underlying classifiers on held-out "
+            "synthetic data — a production rollout would replace this training set "
+            "with labeled historical plant outcomes and re-validate before go-live."
+        )
+
     st.write("### Rollout logic")
     st.markdown(
         """
-        - **Phase 1:** connect the digital twin read-only to one pilot line.
-        - **Phase 2:** validate alerts against actual downtime and quality outcomes.
-        - **Phase 3:** tune thresholds and confidence by station type.
-        - **Phase 4:** expand to other lines/plants while preserving site-specific configuration.
-        """
+- **Phase 1:** connect the digital twin read-only to one pilot line.
+- **Phase 2:** validate alerts against actual downtime and quality outcomes.
+- **Phase 3:** tune thresholds and confidence by station type.
+- **Phase 4:** expand to other lines/plants while preserving site-specific configuration.
+"""
+    )
+    st.caption(
+        "🔧 Instrumentation upgrades for partial/manual stations are constrained to "
+        f"~{config.get('maintenance_windows_per_year', 4)} scheduled maintenance windows per year — "
+        "the rollout plan above assumes sensor gaps are closed opportunistically during those windows, "
+        "not on demand."
     )
 
 with tab5:
