@@ -5,7 +5,14 @@ import pandas as pd
 import plotly.express as px
 import streamlit as st
 
-from simulator import initial_line, simulate_step
+from simulator import (
+    initial_line,
+    simulate_step,
+    load_config,
+    spawn_vehicles,
+    advance_vehicles,
+    vehicles_at_risk,
+)
 from prediction import train_models, score_line, explain_station
 
 
@@ -22,14 +29,27 @@ st.caption("Vehicle assembly-line digital twin • bottleneck prediction • def
 def get_models():
     return train_models()
 
+@st.cache_resource
+def get_config():
+    return load_config()
+
 bottleneck_model, defect_model, anomaly_model = get_models()
+config = get_config()
 
 if "step" not in st.session_state:
     st.session_state.step = 0
 if "line" not in st.session_state:
-    st.session_state.line = initial_line(30)
+    st.session_state.line = initial_line(config=config)
 if "history" not in st.session_state:
     st.session_state.history = []
+if "vehicles" not in st.session_state:
+    st.session_state.vehicles = spawn_vehicles(
+        st.session_state.line["station_id"].tolist(), config=config
+    )
+if "vehicle_log" not in st.session_state:
+    st.session_state.vehicle_log = pd.DataFrame()
+if "feedback" not in st.session_state:
+    st.session_state.feedback = []  # list of dicts: station_id, step, status, verdict
 
 with st.sidebar:
     st.header("Simulation controls")
@@ -45,8 +65,13 @@ with st.sidebar:
 
     if reset:
         st.session_state.step = 0
-        st.session_state.line = initial_line(30)
+        st.session_state.line = initial_line(config=config)
         st.session_state.history = []
+        st.session_state.vehicles = spawn_vehicles(
+            st.session_state.line["station_id"].tolist(), config=config
+        )
+        st.session_state.vehicle_log = pd.DataFrame()
+        st.session_state.feedback = []
         st.rerun()
 
     if advance:
@@ -71,6 +96,15 @@ scored = score_line(
     defect_model,
     anomaly_model,
 )
+
+if advance:
+    st.session_state.vehicles, new_log = advance_vehicles(
+        st.session_state.vehicles, scored, st.session_state.step
+    )
+    if not new_log.empty:
+        st.session_state.vehicle_log = pd.concat(
+            [st.session_state.vehicle_log, new_log], ignore_index=True
+        )
 
 # History for trend chart
 top_b = scored.sort_values("bottleneck_risk", ascending=False).iloc[0]
@@ -101,11 +135,12 @@ c3.metric("Warnings", warning_count)
 c4.metric("Critical stations", critical_count)
 c5.metric("Simulation step", st.session_state.step)
 
-tab1, tab2, tab3, tab4 = st.tabs([
+tab1, tab2, tab3, tab4, tab5 = st.tabs([
     "🟢 Live Twin",
     "⚠️ Alerts",
     "📈 Plant Manager",
     "💼 Leadership",
+    "🚗 Traceability",
 ])
 
 with tab1:
@@ -167,6 +202,26 @@ with tab1:
 
 with tab2:
     st.subheader("Priority alerts")
+
+    fb = pd.DataFrame(st.session_state.feedback)
+    if not fb.empty:
+        confirmed = int((fb["verdict"] == "confirmed").sum())
+        false_alarm = int((fb["verdict"] == "false_alarm").sum())
+        total = confirmed + false_alarm
+        acceptance_rate = (confirmed / total * 100) if total else None
+        m1, m2, m3 = st.columns(3)
+        m1.metric("Alerts reviewed", total)
+        m2.metric("Confirmed issues", confirmed)
+        m3.metric(
+            "Alert acceptance rate",
+            f"{acceptance_rate:.0f}%" if acceptance_rate is not None else "—",
+        )
+        st.caption(
+            "Acceptance rate = confirmed issues ÷ reviewed alerts. This is the feedback "
+            "loop that would calibrate thresholds against real outcomes before production use."
+        )
+        st.markdown("---")
+
     alerts = scored[
         (scored["status"] != "Normal")
         | (scored["anomaly_score"] >= 0.62)
@@ -194,6 +249,28 @@ with tab2:
                 )
             st.caption("Why: " + "; ".join(reasons[:3]) + ".")
             st.write(f"**Action:** {action}")
+
+            key_base = f"{row['station_id']}_{st.session_state.step}"
+            fcol1, fcol2, _ = st.columns([1, 1, 3])
+            with fcol1:
+                if st.button("✅ Confirm issue", key=f"confirm_{key_base}"):
+                    st.session_state.feedback.append({
+                        "station_id": row["station_id"],
+                        "step": st.session_state.step,
+                        "status": row["status"],
+                        "verdict": "confirmed",
+                    })
+                    st.rerun()
+            with fcol2:
+                if st.button("❌ False alarm", key=f"false_{key_base}"):
+                    st.session_state.feedback.append({
+                        "station_id": row["station_id"],
+                        "step": st.session_state.step,
+                        "status": row["status"],
+                        "verdict": "false_alarm",
+                    })
+                    st.rerun()
+            st.markdown("---")
 
 with tab3:
     st.subheader("Plant manager view")
@@ -263,6 +340,52 @@ with tab4:
         - **Phase 4:** expand to other lines/plants while preserving site-specific configuration.
         """
     )
+
+with tab5:
+    st.subheader("Vehicle genealogy & traceability")
+    st.caption(
+        "A defect introduced early on the line (e.g. while a station is drifting) may not "
+        "surface until a much later inspection point. This view tags every simulated unit "
+        "with the stations it passed through and the risk at each, so a problem can be "
+        "traced back even after the unit has left the affected station."
+    )
+
+    log = st.session_state.vehicle_log
+    if log.empty:
+        st.info("Press **Next step** in the sidebar to move vehicles through the line and build genealogy history.")
+    else:
+        at_risk = vehicles_at_risk(log, defect_risk_threshold=0.55)
+        st.write(f"### Units flagged for inspection ({len(at_risk)})")
+        if at_risk.empty:
+            st.success("No units have passed through an elevated-defect-risk station yet.")
+        else:
+            st.dataframe(
+                at_risk.rename(columns={
+                    "vehicle_id": "Vehicle",
+                    "model": "Model",
+                    "flagged_stations": "Stations w/ elevated risk",
+                    "max_defect_risk": "Peak defect risk",
+                    "first_flagged_step": "First seen at step",
+                }),
+                hide_index=True,
+                use_container_width=True,
+            )
+            st.caption(
+                "These units should be held or inspected downstream even though they may "
+                "already have left the flagged station — this is the audit trail a QA team "
+                "would use for root-cause tracing."
+            )
+
+        st.markdown("---")
+        st.write("### Look up a specific vehicle")
+        vehicle_ids = sorted(log["vehicle_id"].unique().tolist())
+        selected_vehicle = st.selectbox("Vehicle ID", vehicle_ids)
+        v_log = log.loc[log["vehicle_id"].eq(selected_vehicle)].sort_values("step")
+        st.dataframe(
+            v_log[["step", "station_id", "sensor_level", "defect_risk", "bottleneck_risk", "confidence"]],
+            hide_index=True,
+            use_container_width=True,
+        )
 
 st.markdown("---")
 st.caption(

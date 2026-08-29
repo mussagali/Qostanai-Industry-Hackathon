@@ -7,6 +7,8 @@ from sklearn.pipeline import Pipeline
 from sklearn.impute import SimpleImputer
 from sklearn.preprocessing import StandardScaler
 
+from simulator import load_config
+
 
 FEATURES = [
     "cycle_time",
@@ -17,6 +19,25 @@ FEATURES = [
     "throughput",
     "downtime_min",
 ]
+
+# Typical/baseline values a healthy station operates around. Used to turn
+# alert explanations into quantified deviations ("29% above baseline")
+# instead of plain threshold crossings.
+BASELINES = {
+    "cycle_time": 48.0,
+    "temperature": 57.0,
+    "vibration": 2.3,
+    "torque": 45.0,
+    "queue_length": 2.0,
+    "throughput": 72.0,
+    "downtime_min": 1.0,
+}
+
+_CFG = load_config()
+_THRESH = _CFG.get("thresholds", {
+    "warning": {"bottleneck_risk": 0.55, "defect_risk": 0.55, "anomaly_score": 0.62},
+    "critical": {"bottleneck_risk": 0.75, "defect_risk": 0.75},
+})
 
 def _synthetic_training_data(n: int = 3500, seed: int = 7):
     rng = np.random.default_rng(seed)
@@ -122,43 +143,67 @@ def score_line(
     out["bottleneck_risk"] *= out["confidence"]
     out["defect_risk"] *= out["confidence"]
 
+    w = _THRESH.get("warning", {})
+    c = _THRESH.get("critical", {})
+
     out["status"] = "Normal"
     out.loc[
-        (out["bottleneck_risk"] >= 0.55)
-        | (out["defect_risk"] >= 0.55)
-        | (out["anomaly_score"] >= 0.62),
+        (out["bottleneck_risk"] >= w.get("bottleneck_risk", 0.55))
+        | (out["defect_risk"] >= w.get("defect_risk", 0.55))
+        | (out["anomaly_score"] >= w.get("anomaly_score", 0.62)),
         "status"
     ] = "Warning"
     out.loc[
-        (out["bottleneck_risk"] >= 0.75)
-        | (out["defect_risk"] >= 0.75),
+        (out["bottleneck_risk"] >= c.get("bottleneck_risk", 0.75))
+        | (out["defect_risk"] >= c.get("defect_risk", 0.75)),
         "status"
     ] = "Critical"
 
     return out
 
-def explain_station(row: pd.Series) -> tuple[list[str], str]:
-    reasons = []
+def _pct_dev(value: float, baseline: float) -> float:
+    if baseline == 0:
+        return 0.0
+    return (value - baseline) / baseline * 100.0
 
-    if row["cycle_time"] >= 62:
-        reasons.append("cycle time is well above baseline")
-    if row["queue_length"] >= 9:
-        reasons.append("queue is building upstream")
-    if row["throughput"] <= 58:
-        reasons.append("throughput has dropped")
-    if row["downtime_min"] >= 4:
-        reasons.append("recent downtime is elevated")
-    if pd.notna(row["vibration"]) and row["vibration"] >= 4.2:
-        reasons.append("vibration is abnormal")
-    if pd.notna(row["temperature"]) and row["temperature"] >= 75:
-        reasons.append("temperature is elevated")
-    if pd.notna(row["torque"]) and row["torque"] >= 60:
-        reasons.append("torque is outside the normal band")
+
+def explain_station(row: pd.Series) -> tuple[list[str], str]:
+    """Returns quantified, ranked explanations rather than plain threshold
+    checks — e.g. 'cycle time is 29% above baseline (62.0s vs 48s typical)'.
+    This makes the top contributing factor(s) explicit for a multi-causal
+    alert instead of a flat list of everything that crossed a line."""
+    reasons: list[tuple[float, str]] = []  # (abs magnitude for ranking, text)
+
+    checks = [
+        ("cycle_time", "s", "cycle time"),
+        ("queue_length", " units", "queue length"),
+        ("throughput", " units/hr", "throughput"),
+        ("downtime_min", " min", "downtime"),
+        ("vibration", " mm/s", "vibration"),
+        ("temperature", " °C", "temperature"),
+        ("torque", " Nm", "torque"),
+    ]
+    for col, unit, label in checks:
+        val = row.get(col)
+        if pd.isna(val):
+            continue
+        baseline = BASELINES[col]
+        dev = _pct_dev(val, baseline)
+        if abs(dev) >= 20:  # meaningful deviation threshold
+            direction = "above" if dev > 0 else "below"
+            reasons.append((
+                abs(dev),
+                f"{label} is {abs(dev):.0f}% {direction} baseline ({val:.1f}{unit} vs {baseline:.0f}{unit} typical)",
+            ))
+
     if row["confidence"] < 0.75:
-        reasons.append("sensor coverage is incomplete, so confidence is reduced")
+        reasons.append((15, "sensor coverage is incomplete at this station, so confidence is reduced"))
+
+    reasons.sort(key=lambda t: t[0], reverse=True)
+    reasons = [text for _, text in reasons]
 
     if not reasons:
-        reasons.append("process values are close to the normal operating range")
+        reasons = ["process values are close to the normal operating range"]
 
     if row["bottleneck_risk"] >= row["defect_risk"] and row["bottleneck_risk"] >= 0.55:
         action = "Inspect station capacity/tooling and rebalance work before the queue grows."

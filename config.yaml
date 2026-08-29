@@ -1,0 +1,38 @@
+# DigitalTwin.ai — line configuration
+# Swap this file per plant/line to demonstrate scalability without code changes.
+
+line:
+  name: "Plant A — Line 1 (mixed-model)"
+  n_stations: 30
+  seed: 42
+  # Station type mix, in order along the line
+  station_types:
+    Body: 6
+    Paint: 6
+    Final: 18
+  # Sensor coverage mix across stations (must sum to 1.0)
+  sensor_coverage:
+    rich: 0.65
+    partial: 0.25
+    manual: 0.10
+
+vehicle_tracking:
+  batch_size: 40
+  seed: 123
+  models:
+    Model-A: 0.45
+    Model-B: 0.35
+    Model-C: 0.20
+
+thresholds:
+  warning:
+    bottleneck_risk: 0.55
+    defect_risk: 0.55
+    anomaly_score: 0.62
+  critical:
+    bottleneck_risk: 0.75
+    defect_risk: 0.75
+
+# Example alternate config for a second plant — copy this file to
+# config_plant_b.yaml, adjust these values, and point app.py at it via
+# the CONFIG_PATH environment variable to demo multi-site scaling.
