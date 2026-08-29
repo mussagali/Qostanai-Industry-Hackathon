@@ -27,8 +27,4 @@ thresholds:
     bottleneck_risk: 0.75
     defect_risk: 0.75
 
-# NEW: models retrofits / instrumentation changes can only happen during a
-# handful of scheduled windows per year (Track 4 "real-world complexity").
-# The dashboard's Leadership view uses this to state the constraint rather
-# than implying sensors could be added at any time.
 maintenance_windows_per_year: 4

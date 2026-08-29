@@ -7,7 +7,12 @@ from sklearn.pipeline import Pipeline
 from sklearn.impute import SimpleImputer
 from sklearn.preprocessing import StandardScaler
 from sklearn.model_selection import train_test_split
-from sklearn.metrics import roc_auc_score, precision_score, recall_score, f1_score
+from sklearn.metrics import (
+    roc_auc_score,
+    precision_score,
+    recall_score,
+    f1_score,
+)
 
 from simulator import load_config
 
@@ -35,10 +40,20 @@ BASELINES = {
 }
 
 _CFG = load_config()
-_THRESH = _CFG.get("thresholds", {
-    "warning": {"bottleneck_risk": 0.55, "defect_risk": 0.55, "anomaly_score": 0.62},
-    "critical": {"bottleneck_risk": 0.75, "defect_risk": 0.75},
-})
+_THRESH = _CFG.get(
+    "thresholds",
+    {
+        "warning": {
+            "bottleneck_risk": 0.55,
+            "defect_risk": 0.55,
+            "anomaly_score": 0.62,
+        },
+        "critical": {
+            "bottleneck_risk": 0.75,
+            "defect_risk": 0.75,
+        },
+    },
+)
 
 
 # ---------------------------------------------------------------------------
@@ -63,6 +78,7 @@ _THRESH = _CFG.get("thresholds", {
 
 def _synthetic_training_data(n: int = 3500, seed: int = 7):
     rng = np.random.default_rng(seed)
+
     x = pd.DataFrame({
         "cycle_time": rng.normal(49, 9, n),
         "temperature": rng.normal(59, 11, n),
@@ -93,6 +109,7 @@ def _synthetic_training_data(n: int = 3500, seed: int = 7):
     temp = x["temperature"].fillna(59)
     vib = x["vibration"].fillna(2.7)
     tq = x["torque"].fillna(46)
+
     defect_score = (
         0.09 * (temp - 60)
         + 0.9 * (vib - 2.5)
@@ -107,79 +124,125 @@ def _synthetic_training_data(n: int = 3500, seed: int = 7):
 
 def _make_model(seed: int) -> Pipeline:
     return Pipeline([
-        ("imputer", SimpleImputer(strategy="median", add_indicator=True)),
+        (
+            "imputer",
+            SimpleImputer(
+                strategy="median",
+                add_indicator=True,
+            ),
+        ),
         ("scale", StandardScaler()),
-        ("model", RandomForestClassifier(
-            n_estimators=180,
-            max_depth=8,
-            class_weight="balanced",
-            random_state=seed,
-        )),
+        (
+            "model",
+            RandomForestClassifier(
+                n_estimators=180,
+                max_depth=8,
+                class_weight="balanced",
+                random_state=seed,
+            ),
+        ),
     ])
 
 
 def train_models(seed: int = 7):
     """Train the bottleneck/defect classifiers and the anomaly detector.
 
-    Also computes held-out validation metrics (NEW) so the app can show
-    real precision/recall/AUC numbers instead of only the per-station
+    Also computes held-out validation metrics so the app can show
+    precision/recall/AUC numbers instead of only the per-station
     confidence heuristic. Metrics are stashed as a module-level dict
-    (`LAST_METRICS`) and returned alongside the models.
+    (`LAST_METRICS`).
     """
     x, y_b, y_d = _synthetic_training_data(seed=seed)
 
-    x_train, x_test, yb_train, yb_test, yd_train, yd_test = train_test_split(
-        x, y_b, y_d, test_size=0.25, random_state=seed, stratify=y_b
+    (
+        x_train,
+        x_test,
+        yb_train,
+        yb_test,
+        yd_train,
+        yd_test,
+    ) = train_test_split(
+        x,
+        y_b,
+        y_d,
+        test_size=0.25,
+        random_state=seed,
+        stratify=y_b,
     )
 
     bottleneck_model = _make_model(seed)
     defect_model = _make_model(seed)
+
     bottleneck_model.fit(x_train[FEATURES], yb_train)
     defect_model.fit(x_train[FEATURES], yd_train)
 
     anomaly_pipe = Pipeline([
-        ("imputer", SimpleImputer(strategy="median", add_indicator=True)),
+        (
+            "imputer",
+            SimpleImputer(
+                strategy="median",
+                add_indicator=True,
+            ),
+        ),
         ("scale", StandardScaler()),
-        ("model", IsolationForest(
-            n_estimators=160,
-            contamination=0.08,
-            random_state=seed,
-        )),
+        (
+            "model",
+            IsolationForest(
+                n_estimators=160,
+                contamination=0.08,
+                random_state=seed,
+            ),
+        ),
     ])
     anomaly_pipe.fit(x_train[FEATURES])
 
-    # --- Held-out evaluation (NEW) -----------------------------------
+    # --- Held-out evaluation -----------------------------------------
     def _eval(model, x_te, y_te, name):
         proba = model.predict_proba(x_te[FEATURES])[:, 1]
         pred = (proba >= 0.5).astype(int)
+
         return {
             "name": name,
-            "auc": float(roc_auc_score(y_te, proba)) if y_te.nunique() > 1 else float("nan"),
-            "precision": float(precision_score(y_te, pred, zero_division=0)),
-            "recall": float(recall_score(y_te, pred, zero_division=0)),
-            "f1": float(f1_score(y_te, pred, zero_division=0)),
+            "auc": (
+                float(roc_auc_score(y_te, proba))
+                if y_te.nunique() > 1
+                else float("nan")
+            ),
+            "precision": float(
+                precision_score(y_te, pred, zero_division=0)
+            ),
+            "recall": float(
+                recall_score(y_te, pred, zero_division=0)
+            ),
+            "f1": float(
+                f1_score(y_te, pred, zero_division=0)
+            ),
             "positive_rate": float(y_te.mean()),
             "n_test": int(len(y_te)),
         }
 
     global LAST_METRICS
     LAST_METRICS = {
-        "bottleneck": _eval(bottleneck_model, x_test, yb_test, "Bottleneck risk"),
-        "defect": _eval(defect_model, x_test, yd_test, "Defect risk"),
+        "bottleneck": _eval(
+            bottleneck_model,
+            x_test,
+            yb_test,
+            "Bottleneck risk",
+        ),
+        "defect": _eval(
+            defect_model,
+            x_test,
+            yd_test,
+            "Defect risk",
+        ),
     }
 
-    # --- Calibrate the anomaly-score scaling against real training data
-    # (replaces the previous unexplained "0.5 - raw*2.2" magic numbers).
-    # IsolationForest's decision_function is higher = more normal, lower/
-    # negative = more anomalous, but its scale isn't bounded or intuitive.
-    # We map the OBSERVED range on the training set to [0, 1] so 0 means
-    # "as normal as the most normal training point" and 1 means "as
-    # anomalous as the most anomalous training point" — a scale that's
-    # actually derived from data instead of guessed.
+    # Calibrate anomaly-score scaling using the observed training distribution.
     train_raw = anomaly_pipe.decision_function(x_train[FEATURES])
+
     global ANOMALY_LO, ANOMALY_HI
-    ANOMALY_LO = float(np.percentile(train_raw, 1))   # near-most-anomalous
-    ANOMALY_HI = float(np.percentile(train_raw, 99))  # near-most-normal
+    ANOMALY_LO = float(np.percentile(train_raw, 1))
+    ANOMALY_HI = float(np.percentile(train_raw, 99))
 
     return bottleneck_model, defect_model, anomaly_pipe
 
@@ -194,6 +257,7 @@ def _confidence(row: pd.Series) -> float:
     sensor_cols = ["temperature", "vibration", "torque"]
     observed = sum(pd.notna(row[c]) for c in sensor_cols)
     sensor_factor = observed / len(sensor_cols)
+
     # Process data is still available even at manual stations.
     base = 0.58 + 0.38 * sensor_factor
     return float(np.clip(base, 0.55, 0.96))
@@ -208,34 +272,57 @@ def score_line(
     out = df.copy()
     x = out[FEATURES]
 
+    # Model probabilities are kept as risk values.
+    # IMPORTANT: confidence is reported separately below; it must not
+    # suppress a high-risk prediction simply because sensor coverage is poor.
     out["bottleneck_risk"] = bottleneck_model.predict_proba(x)[:, 1]
     out["defect_risk"] = defect_model.predict_proba(x)[:, 1]
 
     # IsolationForest: higher decision_function means more normal.
-    # Scaled using the calibrated [ANOMALY_LO, ANOMALY_HI] range computed
-    # from training data in train_models(), instead of fixed constants.
+    # Scale the observed training range into an intuitive 0..1 anomaly score.
     raw = anomaly_model.decision_function(x)
     span = max(ANOMALY_HI - ANOMALY_LO, 1e-6)
-    out["anomaly_score"] = np.clip((ANOMALY_HI - raw) / span, 0, 1)
+    out["anomaly_score"] = np.clip(
+        (ANOMALY_HI - raw) / span,
+        0,
+        1,
+    )
 
+    # Confidence describes data completeness/observability separately.
     out["confidence"] = out.apply(_confidence, axis=1)
-    out["bottleneck_risk"] *= out["confidence"]
-    out["defect_risk"] *= out["confidence"]
+    out["low_confidence"] = out["confidence"] < 0.75
 
     w = _THRESH.get("warning", {})
     c = _THRESH.get("critical", {})
 
     out["status"] = "Normal"
+
     out.loc[
-        (out["bottleneck_risk"] >= w.get("bottleneck_risk", 0.55))
-        | (out["defect_risk"] >= w.get("defect_risk", 0.55))
-        | (out["anomaly_score"] >= w.get("anomaly_score", 0.62)),
-        "status"
+        (
+            out["bottleneck_risk"]
+            >= w.get("bottleneck_risk", 0.55)
+        )
+        | (
+            out["defect_risk"]
+            >= w.get("defect_risk", 0.55)
+        )
+        | (
+            out["anomaly_score"]
+            >= w.get("anomaly_score", 0.62)
+        ),
+        "status",
     ] = "Warning"
+
     out.loc[
-        (out["bottleneck_risk"] >= c.get("bottleneck_risk", 0.75))
-        | (out["defect_risk"] >= c.get("defect_risk", 0.75)),
-        "status"
+        (
+            out["bottleneck_risk"]
+            >= c.get("bottleneck_risk", 0.75)
+        )
+        | (
+            out["defect_risk"]
+            >= c.get("defect_risk", 0.75)
+        ),
+        "status",
     ] = "Critical"
 
     return out
@@ -243,7 +330,7 @@ def score_line(
 
 def get_model_metrics() -> dict:
     """Expose the held-out validation metrics computed in train_models()
-    so the UI can display real precision/recall/AUC instead of only the
+    so the UI can display precision/recall/AUC instead of only the
     per-station confidence heuristic."""
     return LAST_METRICS
 
@@ -255,11 +342,8 @@ def _pct_dev(value: float, baseline: float) -> float:
 
 
 def explain_station(row: pd.Series) -> tuple[list[str], str]:
-    """Returns quantified, ranked explanations rather than plain threshold
-    checks — e.g. 'cycle time is 29% above baseline (62.0s vs 48s typical)'.
-    This makes the top contributing factor(s) explicit for a multi-causal
-    alert instead of a flat list of everything that crossed a line."""
-    reasons: list[tuple[float, str]] = []  # (abs magnitude for ranking, text)
+    """Return quantified, ranked explanations for station risk."""
+    reasons: list[tuple[float, str]] = []
 
     checks = [
         ("cycle_time", "s", "cycle time"),
@@ -275,30 +359,55 @@ def explain_station(row: pd.Series) -> tuple[list[str], str]:
         val = row.get(col)
         if pd.isna(val):
             continue
+
         baseline = BASELINES[col]
         dev = _pct_dev(val, baseline)
-        if abs(dev) >= 20:  # meaningful deviation threshold
+
+        if abs(dev) >= 20:
             direction = "above" if dev > 0 else "below"
             reasons.append((
                 abs(dev),
-                f"{label} is {abs(dev):.0f}% {direction} baseline ({val:.1f}{unit} vs {baseline:.0f}{unit} typical)",
+                (
+                    f"{label} is {abs(dev):.0f}% {direction} baseline "
+                    f"({val:.1f}{unit} vs {baseline:.0f}{unit} typical)"
+                ),
             ))
 
     if row["confidence"] < 0.75:
-        reasons.append((15, "sensor coverage is incomplete at this station, so confidence is reduced"))
+        reasons.append((
+            15,
+            (
+                "sensor coverage is incomplete at this station, "
+                "so confidence is reduced"
+            ),
+        ))
 
     reasons.sort(key=lambda t: t[0], reverse=True)
     reasons = [text for _, text in reasons]
 
     if not reasons:
-        reasons = ["process values are close to the normal operating range"]
+        reasons = [
+            "process values are close to the normal operating range"
+        ]
 
-    if row["bottleneck_risk"] >= row["defect_risk"] and row["bottleneck_risk"] >= 0.55:
-        action = "Inspect station capacity/tooling and rebalance work before the queue grows."
+    if (
+        row["bottleneck_risk"] >= row["defect_risk"]
+        and row["bottleneck_risk"] >= 0.55
+    ):
+        action = (
+            "Inspect station capacity/tooling and rebalance work "
+            "before the queue grows."
+        )
     elif row["defect_risk"] >= 0.55:
-        action = "Hold or inspect affected units and check process parameters before final quality inspection."
+        action = (
+            "Hold or inspect affected units and check process parameters "
+            "before final quality inspection."
+        )
     elif row["anomaly_score"] >= 0.62:
-        action = "Review the station because its current behavior differs from the historical pattern."
+        action = (
+            "Review the station because its current behavior differs "
+            "from the historical pattern."
+        )
     else:
         action = "Continue monitoring."
 

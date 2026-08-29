@@ -789,6 +789,8 @@ config = get_config()
 
 if "step" not in st.session_state:
     st.session_state.step = 0
+if "simulation_seed" not in st.session_state:
+    st.session_state.simulation_seed = 42
 if "line" not in st.session_state:
     st.session_state.line = initial_line(config=config)
 if "history" not in st.session_state:
@@ -832,6 +834,7 @@ with st.sidebar:
 
     if reset:
         st.session_state.step = 0
+        st.session_state.simulation_seed += 101
         st.session_state.line = initial_line(config=config)
         st.session_state.history = []
         st.session_state.station_history = []
@@ -848,6 +851,7 @@ with st.sidebar:
             st.session_state.line,
             st.session_state.step,
             scenario=scenario,
+            seed=st.session_state.simulation_seed,
         )
 
     st.markdown("<hr/>", unsafe_allow_html=True)
@@ -1057,21 +1061,38 @@ with tab1:
         render_section_header("Predictive Outlook", "Prototype trend estimate")
         current_risk = float(scored["bottleneck_risk"].max())
         top_row = scored.loc[scored["bottleneck_risk"].idxmax()]
+        target_station = str(top_row["station_id"])
 
         projected_risk = current_risk
         steps_to_critical = None
-        if len(hist_df) >= 3:
-            recent = hist_df.tail(8)
-            x = recent["step"].to_numpy(dtype=float)
-            y = recent["max_bottleneck_risk"].to_numpy(dtype=float)
-            if len(set(x)) > 1:
-                slope, intercept = np.polyfit(x, y, 1)
-                next_step = x[-1] + 5
-                projected_risk = float(np.clip(slope * next_step + intercept, 0.0, 1.0))
-                if slope > 0.001:
-                    remaining = (0.75 - y[-1]) / slope
-                    if remaining > 0:
-                        steps_to_critical = max(1, int(round(remaining)))
+
+        if not station_hist_df.empty:
+            recent = (
+                station_hist_df[
+                    station_hist_df["station_id"].eq(target_station)
+                ]
+                .sort_values("step")
+                .tail(8)
+            )
+
+            if len(recent) >= 3:
+                x = recent["step"].to_numpy(dtype=float)
+                y = recent["bottleneck_risk"].to_numpy(dtype=float)
+
+                if len(set(x)) > 1:
+                    slope, intercept = np.polyfit(x, y, 1)
+                    next_step = x[-1] + 5
+                    projected_risk = float(
+                        np.clip(slope * next_step + intercept, 0.0, 1.0)
+                    )
+
+                    if slope > 0.001:
+                        remaining = (0.75 - y[-1]) / slope
+                        if remaining > 0:
+                            steps_to_critical = max(
+                                1,
+                                int(round(remaining)),
+                            )
 
         pcol1, pcol2, pcol3 = st.columns(3)
         pcol1.markdown(
@@ -1459,7 +1480,7 @@ with tab4:
         unsafe_allow_html=True,
     )
     a4.markdown(render_kpi_card("Total Queue", f"{int(scored['queue_length'].sum())}", "units"), unsafe_allow_html=True)
-    a5.markdown(render_kpi_card("Sensor Coverage", f"{mean_confidence*100:.0f}%", "avg. confidence"), unsafe_allow_html=True)
+    a5.markdown(render_kpi_card("Data Confidence", f"{mean_confidence*100:.0f}%", "avg. across line"), unsafe_allow_html=True)
 
     st.markdown("<div style='height:14px;'></div>", unsafe_allow_html=True)
 

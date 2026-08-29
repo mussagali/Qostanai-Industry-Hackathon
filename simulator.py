@@ -35,8 +35,15 @@ def load_config(path: str = CONFIG_PATH) -> dict:
                 "models": {"Model-A": 0.45, "Model-B": 0.35, "Model-C": 0.20},
             },
             "thresholds": {
-                "warning": {"bottleneck_risk": 0.55, "defect_risk": 0.55, "anomaly_score": 0.62},
-                "critical": {"bottleneck_risk": 0.75, "defect_risk": 0.75},
+                "warning": {
+                    "bottleneck_risk": 0.55,
+                    "defect_risk": 0.55,
+                    "anomaly_score": 0.62,
+                },
+                "critical": {
+                    "bottleneck_risk": 0.75,
+                    "defect_risk": 0.75,
+                },
             },
             "maintenance_windows_per_year": 4,
         }
@@ -65,7 +72,11 @@ def _expand_station_types(type_counts: dict, n_stations: int) -> list[str]:
     return (types * ((n_stations // len(types)) + 1))[:n_stations]
 
 
-def initial_line(n_stations: int | None = None, seed: int | None = None, config: dict | None = None) -> pd.DataFrame:
+def initial_line(
+    n_stations: int | None = None,
+    seed: int | None = None,
+    config: dict | None = None,
+) -> pd.DataFrame:
     cfg = config or load_config()
     line_cfg = cfg.get("line", {})
     n_stations = n_stations or line_cfg.get("n_stations", 30)
@@ -73,7 +84,10 @@ def initial_line(n_stations: int | None = None, seed: int | None = None, config:
     rng = np.random.default_rng(seed)
 
     station_ids = [f"S{i:02d}" for i in range(1, n_stations + 1)]
-    types = _expand_station_types(line_cfg.get("station_types", _DEFAULT_STATION_TYPES), n_stations)
+    types = _expand_station_types(
+        line_cfg.get("station_types", _DEFAULT_STATION_TYPES),
+        n_stations,
+    )
 
     coverage = line_cfg.get("sensor_coverage", _DEFAULT_SENSOR_COVERAGE)
     levels = list(coverage.keys())
@@ -120,10 +134,18 @@ def simulate_step(
     out = df.copy()
 
     # Base process noise
-    out["cycle_time"] = (out["cycle_time"] + rng.normal(0, 0.8, len(out))).clip(35, 95).round(1)
-    out["queue_length"] = (out["queue_length"] + rng.integers(-1, 2, len(out))).clip(0, 25).astype(int)
-    out["throughput"] = (out["throughput"] + rng.normal(0, 1.2, len(out))).clip(35, 90).round(1)
-    out["downtime_min"] = (out["downtime_min"] + rng.uniform(-0.2, 0.35, len(out))).clip(0, 12).round(1)
+    out["cycle_time"] = (
+        out["cycle_time"] + rng.normal(0, 0.8, len(out))
+    ).clip(35, 95).round(1)
+    out["queue_length"] = (
+        out["queue_length"] + rng.integers(-1, 2, len(out))
+    ).clip(0, 25).astype(int)
+    out["throughput"] = (
+        out["throughput"] + rng.normal(0, 1.2, len(out))
+    ).clip(35, 90).round(1)
+    out["downtime_min"] = (
+        out["downtime_min"] + rng.uniform(-0.2, 0.35, len(out))
+    ).clip(0, 12).round(1)
 
     for col, noise, low, high, decimals in [
         ("temperature", 0.6, 35, 100, 1),
@@ -173,29 +195,67 @@ def simulate_step(
             out.loc[i, "queue_length"] = min(4 + step, 18)
 
     elif scenario == "Random":
-        # NEW: at the first step of this scenario, pick 1-3 stations and a
-        # random severity/direction for each, instead of a hardcoded
-        # station/curve. This is the "unseen degradation" stress test:
-        # the model was never trained or hand-tuned against this specific
-        # combination, which is the honest way to demonstrate
-        # generalization rather than a scripted, judge-visible answer key.
-        n_affected = rng.integers(1, 4)
-        affected = rng.choice(out["station_id"].tolist(), size=n_affected, replace=False)
+        # Pick the incident definition from a seed that is constant for the
+        # whole run. app.py changes this seed only when Reset is pressed,
+        # so the same random station(s) keep degrading instead of jumping
+        # around the factory on every simulation step.
+        scenario_rng = np.random.default_rng(seed + 999)
+
+        n_affected = int(scenario_rng.integers(1, 4))
+        affected = scenario_rng.choice(
+            out["station_id"].tolist(),
+            size=n_affected,
+            replace=False,
+        )
+
         for station_id in affected:
             i = out.index[out["station_id"].eq(station_id)][0]
-            severity = min(step, rng.integers(6, 14)) * rng.uniform(0.6, 1.4)
-            mode = rng.choice(["bottleneck", "defect", "both"])
+
+            mode = str(
+                scenario_rng.choice(["bottleneck", "defect", "both"])
+            )
+            severity_scale = float(scenario_rng.uniform(0.75, 1.35))
+
+            # Because `out` already contains the previous step's state,
+            # apply a per-step increment. This produces a progressive,
+            # approximately linear degradation instead of compounding the
+            # full step number on top of an already-degraded station.
             if mode in ("bottleneck", "both"):
-                out.loc[i, "cycle_time"] = min(out.loc[i, "cycle_time"] + severity * 2.0, 92)
-                out.loc[i, "queue_length"] = int(min(out.loc[i, "queue_length"] + severity * 1.5, 25))
-                out.loc[i, "throughput"] = max(out.loc[i, "throughput"] - severity * 2.0, 35)
+                out.loc[i, "cycle_time"] = min(
+                    out.loc[i, "cycle_time"] + 1.9 * severity_scale,
+                    92,
+                )
+                out.loc[i, "queue_length"] = int(
+                    min(
+                        out.loc[i, "queue_length"] + 1.4 * severity_scale,
+                        25,
+                    )
+                )
+                out.loc[i, "throughput"] = max(
+                    out.loc[i, "throughput"] - 1.8 * severity_scale,
+                    35,
+                )
+                out.loc[i, "downtime_min"] = min(
+                    out.loc[i, "downtime_min"] + 0.35 * severity_scale,
+                    12,
+                )
+
             if mode in ("defect", "both"):
                 if pd.notna(out.loc[i, "vibration"]):
-                    out.loc[i, "vibration"] = min(out.loc[i, "vibration"] + severity * 0.3, 8.5)
+                    out.loc[i, "vibration"] = min(
+                        out.loc[i, "vibration"] + 0.28 * severity_scale,
+                        8.5,
+                    )
                 if pd.notna(out.loc[i, "temperature"]):
-                    out.loc[i, "temperature"] = min(out.loc[i, "temperature"] + severity * 1.3, 96)
+                    out.loc[i, "temperature"] = min(
+                        out.loc[i, "temperature"] + 1.25 * severity_scale,
+                        96,
+                    )
                 if pd.notna(out.loc[i, "torque"]):
-                    out.loc[i, "torque"] = min(out.loc[i, "torque"] + severity * 1.8, 78)
+                    out.loc[i, "torque"] = min(
+                        out.loc[i, "torque"] + 1.55 * severity_scale,
+                        78,
+                    )
 
     return out
 
@@ -204,7 +264,11 @@ def simulate_vehicle_batch(n: int = 120, seed: int = 123) -> pd.DataFrame:
     rng = np.random.default_rng(seed)
     return pd.DataFrame({
         "vehicle_id": [f"V{i:04d}" for i in range(1, n + 1)],
-        "model": rng.choice(["Model-A", "Model-B", "Model-C"], size=n, p=[0.45, 0.35, 0.20]),
+        "model": rng.choice(
+            ["Model-A", "Model-B", "Model-C"],
+            size=n,
+            p=[0.45, 0.35, 0.20],
+        ),
         "temperature": rng.normal(60, 8, n),
         "vibration": rng.normal(2.6, 0.8, n),
         "torque": rng.normal(46, 6, n),
@@ -219,15 +283,26 @@ def simulate_vehicle_batch(n: int = 120, seed: int = 123) -> pd.DataFrame:
 # inspection failure can be traced back to exactly which station(s) it
 # passed while conditions were abnormal.
 
-def spawn_vehicles(station_ids: list[str], config: dict | None = None) -> pd.DataFrame:
+def spawn_vehicles(
+    station_ids: list[str],
+    config: dict | None = None,
+) -> pd.DataFrame:
     cfg = (config or load_config()).get("vehicle_tracking", {})
     n = cfg.get("batch_size", 40)
     seed = cfg.get("seed", 123)
-    models_cfg = cfg.get("models", {"Model-A": 0.45, "Model-B": 0.35, "Model-C": 0.20})
+    models_cfg = cfg.get(
+        "models",
+        {"Model-A": 0.45, "Model-B": 0.35, "Model-C": 0.20},
+    )
     rng = np.random.default_rng(seed)
+
     return pd.DataFrame({
         "vehicle_id": [f"V{i:04d}" for i in range(1, n + 1)],
-        "model": rng.choice(list(models_cfg.keys()), size=n, p=list(models_cfg.values())),
+        "model": rng.choice(
+            list(models_cfg.keys()),
+            size=n,
+            p=list(models_cfg.values()),
+        ),
         "current_station_idx": 0,
         "completed": False,
     })
@@ -254,31 +329,49 @@ def advance_vehicles(
     for i, v in out.iterrows():
         if v["completed"]:
             continue
+
         idx = int(v["current_station_idx"])
+
         for _ in range(stations_per_step):
             if idx >= len(station_order):
                 out.loc[i, "completed"] = True
                 break
+
             station_id = station_order[idx]
-            srow = scored_line.loc[scored_line["station_id"].eq(station_id)].iloc[0]
+            srow = scored_line.loc[
+                scored_line["station_id"].eq(station_id)
+            ].iloc[0]
+
             log_rows.append({
                 "vehicle_id": v["vehicle_id"],
                 "model": v["model"],
                 "station_id": station_id,
                 "step": step,
-                "defect_risk": float(srow.get("defect_risk", np.nan)),
-                "bottleneck_risk": float(srow.get("bottleneck_risk", np.nan)),
-                "anomaly_score": float(srow.get("anomaly_score", np.nan)),
+                "defect_risk": float(
+                    srow.get("defect_risk", np.nan)
+                ),
+                "bottleneck_risk": float(
+                    srow.get("bottleneck_risk", np.nan)
+                ),
+                "anomaly_score": float(
+                    srow.get("anomaly_score", np.nan)
+                ),
                 "sensor_level": srow["sensor_level"],
-                "confidence": float(srow.get("confidence", np.nan)),
+                "confidence": float(
+                    srow.get("confidence", np.nan)
+                ),
             })
             idx += 1
+
         out.loc[i, "current_station_idx"] = idx
 
     return out, pd.DataFrame(log_rows)
 
 
-def vehicles_at_risk(vehicle_log: pd.DataFrame, defect_risk_threshold: float = 0.55) -> pd.DataFrame:
+def vehicles_at_risk(
+    vehicle_log: pd.DataFrame,
+    defect_risk_threshold: float = 0.55,
+) -> pd.DataFrame:
     """Given the full vehicle genealogy log, return the set of vehicles that
     passed through at least one station while defect risk was elevated —
     i.e. units that should be flagged for inspection even though the
@@ -286,13 +379,19 @@ def vehicles_at_risk(vehicle_log: pd.DataFrame, defect_risk_threshold: float = 0
     if vehicle_log.empty:
         return vehicle_log
 
-    flagged = vehicle_log.loc[vehicle_log["defect_risk"] >= defect_risk_threshold]
+    flagged = vehicle_log.loc[
+        vehicle_log["defect_risk"] >= defect_risk_threshold
+    ]
+
     return (
         flagged.sort_values(["vehicle_id", "step"])
         .groupby("vehicle_id", as_index=False)
         .agg(
             model=("model", "first"),
-            flagged_stations=("station_id", lambda s: ", ".join(sorted(set(s)))),
+            flagged_stations=(
+                "station_id",
+                lambda s: ", ".join(sorted(set(s))),
+            ),
             max_defect_risk=("defect_risk", "max"),
             first_flagged_step=("step", "min"),
         )
