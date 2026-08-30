@@ -7,6 +7,7 @@ import pandas as pd
 import plotly.graph_objects as go
 import plotly.express as px
 import streamlit as st
+import base64
 
 from simulator import (
     initial_line,
@@ -62,6 +63,13 @@ ZONE_LABELS = {
     "Final": "FINAL ASSEMBLY",
 }
 ZONE_ORDER = ["Body", "Paint", "Final"]
+
+@st.cache_data
+def _load_logo_b64(path: str = "assets/logo.png") -> str:
+    with open(path, "rb") as f:
+        return base64.b64encode(f.read()).decode()
+
+LOGO_B64 = _load_logo_b64()
 
 
 # =============================================================================
@@ -405,8 +413,8 @@ def render_header(step: int, n_stations: int) -> None:
         _clean_html(f"""
         <div class="dt-header">
             <div>
-                <p class="dt-title">DigitalTwin.ai</p>
-                <p class="dt-subtitle">Predictive Vehicle Assembly Intelligence</p>
+                <img src="data:image/png;base64,{LOGO_B64}" style="height:56px; display:block; margin-bottom:2px;" />
+              
             </div>
             <div class="dt-header-right">
                 <span class="dt-header-chip">Plant A — Line 1</span>
