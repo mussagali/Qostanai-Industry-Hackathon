@@ -972,7 +972,7 @@ https://your-demo-video-link
 > Add your Streamlit deployment URL here if deployed.
 
 ```text
-https://your-streamlit-app-url
+https://digitaltwin-ai-xtfraxlfcds7vcb6ekyunc.streamlit.app
 ```
 
 
