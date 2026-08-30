@@ -2,6 +2,12 @@
 
 > **Predict problems before they stop the line.**
 
+🔗 **Repository:** [github.com/Vishal-Dabhade/DigitalTwin-ai](https://github.com/Vishal-Dabhade/DigitalTwin-ai)
+🎥 **Demo Video:** [Add your public demo-video link here]
+🚀 **Live App:** [digitaltwin-ai-xtfraxlfcds7vcb6ekyunc.streamlit.app](https://digitaltwin-ai-xtfraxlfcds7vcb6ekyunc.streamlit.app)
+
+![DigitalTwin.ai architecture diagram](assets/architecture.png)
+
 DigitalTwin.ai is a prototype **vehicle assembly-line digital twin** designed to simulate a realistic automotive production environment with uneven sensor coverage, developing bottlenecks, defect risk, missing data, and downstream vehicle traceability.
 
 The system combines **simulation, machine learning, anomaly detection, confidence scoring, explainable alerts, vehicle genealogy, and human feedback** inside a single interactive factory command center.
@@ -31,15 +37,6 @@ The current prototype simulates **30 production stations by default** across:
 - **Final Assembly**
 
 The number of stations, station mix, sensor coverage, vehicle configuration, and alert thresholds can be modified through `config.yaml`.
-
----
-
-
-
-# Architecture
-
-
-![DigitalTwin.ai architecture diagram](assets/architecture.png)
 
 ---
 
@@ -957,28 +954,6 @@ Potential next steps include:
 
 ---
 
-# Demo
-
-## Demo Video
-
-> Add your public demo-video link here.
-
-```text
-https://your-demo-video-link
-```
-
-## Live Application
-
-> Add your Streamlit deployment URL here if deployed.
-
-```text
-https://digitaltwin-ai-xtfraxlfcds7vcb6ekyunc.streamlit.app
-```
-
-
-
----
-
 # Technology Stack
 
 | Layer | Technology |
@@ -1009,14 +984,6 @@ DigitalTwin.ai demonstrates how a digital twin could potentially help manufactur
 - provide evidence-based operational decisions.
 
 The prototype focuses on demonstrating the **technical mechanism and business concept**, rather than claiming production-level savings.
-
----
-
-# Repository
-
-GitHub:
-
-https://github.com/Vishal-Dabhade/DigitalTwin-ai
 
 ---
 
