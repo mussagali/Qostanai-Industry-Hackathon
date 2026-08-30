@@ -34,7 +34,7 @@ The number of stations, station mix, sensor coverage, vehicle configuration, and
 
 ---
 
----
+
 
 # Architecture
 
@@ -415,7 +415,7 @@ Provides:
 Financial values shown in the prototype are explicitly labeled as **illustrative estimates**.
 
 
-
+---
 # Machine-Learning Approach
 
 The prototype intentionally uses lightweight and explainable machine-learning components.
