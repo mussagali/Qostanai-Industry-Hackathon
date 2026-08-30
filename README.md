@@ -409,47 +409,8 @@ Financial values shown in the prototype are explicitly labeled as **illustrative
 
 # Architecture
 
-```text
-                         config.yaml
-                             |
-                             v
-                  Assembly-Line Simulator
-                             |
-                             v
-               Synthetic Shop-Floor Telemetry
-                             |
-              +--------------+--------------+
-              |              |              |
-              v              v              v
-       Bottleneck Model  Defect Model   Anomaly Detector
-        Random Forest    Random Forest   Isolation Forest
-              |              |              |
-              +--------------+--------------+
-                             |
-                             v
-                  Confidence / Risk Engine
-                             |
-          +------------------+------------------+
-          |                  |                  |
-          v                  v                  v
-     Explanations       Vehicle           Alert Feedback
-                        Traceability
-          |                  |                  |
-          +------------------+------------------+
-                             |
-                             v
-                  Digital Twin Dashboard
-                             |
-          +------------------+------------------+
-          |                  |                  |
-          v                  v                  v
-      Supervisor        Plant Manager       Leadership
-       Live Twin          Analytics        Business Impact
-        Alerts             Trends
-                             |
-                             v
-                       QA Traceability
-```
+
+![DigitalTwin.ai architecture diagram](assets/architecture.png)
 
 ---
 
