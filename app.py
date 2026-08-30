@@ -60,9 +60,12 @@ STATUS_COLOR = {
 ZONE_LABELS = {
     "Body": "BODY SHOP",
     "Paint": "PAINT SHOP",
+    "Trim": "TRIM",
+    "Chassis": "CHASSIS",
     "Final": "FINAL ASSEMBLY",
 }
-ZONE_ORDER = ["Body", "Paint", "Final"]
+
+ZONE_ORDER = ["Body", "Paint", "Trim", "Chassis", "Final"]
 
 @st.cache_data
 def _load_logo_b64(path: str = "assets/logo.png") -> str:
