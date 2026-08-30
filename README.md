@@ -3,7 +3,9 @@
 > **Predict problems before they stop the line.**
 
 🔗 **Repository:** [github.com/Vishal-Dabhade/DigitalTwin-ai](https://github.com/Vishal-Dabhade/DigitalTwin-ai)
+
 🎥 **Demo Video:** [Add your public demo-video link here]
+
 🚀 **Live App:** [digitaltwin-ai-xtfraxlfcds7vcb6ekyunc.streamlit.app](https://digitaltwin-ai-xtfraxlfcds7vcb6ekyunc.streamlit.app)
 
 ![DigitalTwin.ai architecture diagram](assets/architecture.png)
