@@ -34,6 +34,15 @@ The number of stations, station mix, sensor coverage, vehicle configuration, and
 
 ---
 
+---
+
+# Architecture
+
+
+![DigitalTwin.ai architecture diagram](assets/architecture.png)
+
+---
+
 # Key Features
 
 ## Live Digital Twin
@@ -405,14 +414,7 @@ Provides:
 
 Financial values shown in the prototype are explicitly labeled as **illustrative estimates**.
 
----
 
-# Architecture
-
-
-![DigitalTwin.ai architecture diagram](assets/architecture.png)
-
----
 
 # Machine-Learning Approach
 
