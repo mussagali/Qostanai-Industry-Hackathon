@@ -9,8 +9,41 @@ import yaml
 CONFIG_PATH = os.environ.get("CONFIG_PATH", os.path.join(os.path.dirname(__file__), "config.yaml"))
 
 # Fallback used only if config.yaml is missing.
-_DEFAULT_STATION_TYPES = {"Body": 6, "Paint": 6, "Final": 18}
+_DEFAULT_STATION_TYPES = {"Body": 6, "Paint": 6, "Trim": 6, "Chassis": 6, "Final": 6}
 _DEFAULT_SENSOR_COVERAGE = {"rich": 0.65, "partial": 0.25, "manual": 0.10}
+
+_DEFAULT_STATION_PROCESSES = {
+    "S01": "Underbody Welding",
+    "S02": "Side Frame Welding",
+    "S03": "Roof & Pillar Welding",
+    "S04": "Body Geometry Check",
+    "S05": "Closure Fit",
+    "S06": "Body Shop Inspection",
+    "S07": "Pretreatment",
+    "S08": "E-Coat Application",
+    "S09": "Sealer Application",
+    "S10": "Primer / Basecoat",
+    "S11": "Clearcoat & Curing",
+    "S12": "Paint Inspection",
+    "S13": "Instrument Panel Install",
+    "S14": "Interior Trim Install",
+    "S15": "Wiring Harness Install",
+    "S16": "Seat Installation",
+    "S17": "Door Trim Install",
+    "S18": "Interior Quality Check",
+    "S19": "Front Suspension Install",
+    "S20": "Rear Suspension Install",
+    "S21": "Battery / Powertrain Marriage",
+    "S22": "Brake & Steering Connect",
+    "S23": "Wheel & Tire Install",
+    "S24": "Underbody Torque Check",
+    "S25": "Fluids & Final Fill",
+    "S26": "Software Flash",
+    "S27": "Electrical Validation",
+    "S28": "ADAS Calibration",
+    "S29": "End-of-Line Test",
+    "S30": "Final Quality Audit",
+}
 
 
 def load_config(path: str = CONFIG_PATH) -> dict:
@@ -28,6 +61,7 @@ def load_config(path: str = CONFIG_PATH) -> dict:
                 "seed": 42,
                 "station_types": _DEFAULT_STATION_TYPES,
                 "sensor_coverage": _DEFAULT_SENSOR_COVERAGE,
+                "station_processes": _DEFAULT_STATION_PROCESSES,
             },
             "vehicle_tracking": {
                 "batch_size": 40,
@@ -94,9 +128,16 @@ def initial_line(
     probs = list(coverage.values())
     sensor_level = rng.choice(levels, size=n_stations, p=probs)
 
+    process_cfg = line_cfg.get("station_processes", _DEFAULT_STATION_PROCESSES)
+    process_names = [
+        process_cfg.get(station_id, f"Process {station_id}")
+        for station_id in station_ids
+    ]
+
     df = pd.DataFrame({
         "station_id": station_ids,
         "station_type": types,
+        "process_name": process_names,
         "sensor_level": sensor_level,
         "cycle_time": rng.normal(48, 4, n_stations).round(1),
         "temperature": rng.normal(57, 5, n_stations).round(1),
@@ -346,6 +387,7 @@ def advance_vehicles(
                 "vehicle_id": v["vehicle_id"],
                 "model": v["model"],
                 "station_id": station_id,
+                "process_name": str(srow.get("process_name", station_id)),
                 "step": step,
                 "defect_risk": float(
                     srow.get("defect_risk", np.nan)

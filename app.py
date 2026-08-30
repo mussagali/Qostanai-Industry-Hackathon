@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import html
+import re
 import numpy as np
 import pandas as pd
 import plotly.graph_objects as go
@@ -16,7 +17,7 @@ from simulator import (
     vehicles_at_risk,
     maintenance_window_note,
 )
-from prediction import train_models, score_line, explain_station, get_model_metrics
+from prediction import train_models, score_line, explain_station, get_model_metrics, BASELINES
 
 # =============================================================================
 # PAGE CONFIG
@@ -24,7 +25,7 @@ from prediction import train_models, score_line, explain_station, get_model_metr
 
 st.set_page_config(
     page_title="DigitalTwin.ai — Vehicle Assembly Line",
-    page_icon="🏭",
+    page_icon="⚙",
     layout="wide",
     initial_sidebar_state="expanded",
 )
@@ -33,20 +34,20 @@ st.set_page_config(
 # DESIGN TOKENS
 # =============================================================================
 
-BG_MAIN = "#06101C"
-BG_SECONDARY = "#081624"
-CARD_BG = "#0C1B2A"
-CARD_ELEVATED = "#112438"
-BORDER = "#1B344D"
-DIVIDER = "#14283C"
-TEXT_PRIMARY = "#F8FAFC"
-TEXT_SECONDARY = "#B8C4D4"
-TEXT_MUTED = "#71839A"
-ACCENT_CYAN = "#19C6E6"
+BG_MAIN = "#07111F"
+BG_SECONDARY = "#0A1628"
+CARD_BG = "#0E1A2B"
+CARD_ELEVATED = "#132238"
+BORDER = "#1E3350"
+DIVIDER = "#172A42"
+TEXT_PRIMARY = "#F1F5F9"
+TEXT_SECONDARY = "#CBD5E1"
+TEXT_MUTED = "#8292A8"
+ACCENT_CYAN = "#22D3EE"
 ACCENT_BLUE = "#3B82F6"
 HEALTHY = "#22C55E"
 WARNING = "#F59E0B"
-CRITICAL = "#F04444"
+CRITICAL = "#EF4444"
 MANUAL = "#64748B"
 
 STATUS_COLOR = {
@@ -78,12 +79,12 @@ def inject_global_css() -> None:
         }
 
         .stApp {
-            background: #06101C;
+            background: #07111F;
         }
 
         section[data-testid="stSidebar"] {
-            background: #081624;
-            border-right: 1px solid #1B344D;
+            background: #0A1628;
+            border-right: 1px solid #1E3350;
         }
         section[data-testid="stSidebar"] .block-container {
             padding-top: 1.4rem;
@@ -97,29 +98,28 @@ def inject_global_css() -> None:
             max-width: 1400px;
         }
 
-        h1, h2, h3, h4, h5, h6 { color: #F8FAFC !important; }
-        p, span, label, div { color: #B8C4D4; }
+        h1, h2, h3, h4, h5, h6 { color: #F1F5F9 !important; }
+        p, span, label, div { color: #CBD5E1; }
 
         hr {
             border: none;
-            border-top: 1px solid #14283C;
+            border-top: 1px solid #172A42;
             margin: 20px 0;
         }
 
         /* ---- Buttons ---- */
         .stButton > button {
             background: transparent;
-            color: #B8C4D4;
+            color: #CBD5E1;
             border: 1px solid #334155;
-            border-radius: 8px;
+            border-radius: 4px;
             font-weight: 600;
-            font-size: 13.5px;
-            padding: 0.5rem 1rem;
-            transition: all 0.15s ease;
+            font-size: 13px;
+            padding: 0.45rem 0.9rem;
         }
         .stButton > button:hover {
-            border-color: #19C6E6;
-            color: #19C6E6;
+            border-color: #22D3EE;
+            color: #22D3EE;
         }
         .stButton > button[kind="primary"] {
             background: #0891B2 !important;
@@ -133,64 +133,64 @@ def inject_global_css() -> None:
 
         /* ---- Selectbox / inputs ---- */
         div[data-baseweb="select"] > div {
-            background: #0C1B2A !important;
-            border: 1px solid #1B344D !important;
-            border-radius: 8px !important;
-            color: #F8FAFC !important;
+            background: #0E1A2B !important;
+            border: 1px solid #1E3350 !important;
+            border-radius: 4px !important;
+            color: #F1F5F9 !important;
         }
         div[data-baseweb="popover"] { z-index: 999; }
-        ul[role="listbox"] { background: #112438 !important; }
+        ul[role="listbox"] { background: #132238 !important; }
 
         /* ---- Tabs ---- */
         .stTabs [data-baseweb="tab-list"] {
-            gap: 4px;
-            border-bottom: 1px solid #1B344D;
+            gap: 2px;
+            border-bottom: 1px solid #1E3350;
         }
         .stTabs [data-baseweb="tab"] {
             background: transparent;
-            color: #71839A;
+            color: #8292A8;
             font-weight: 600;
-            font-size: 13.5px;
-            letter-spacing: 0.3px;
-            padding: 10px 16px;
-            border-radius: 8px 8px 0 0;
+            font-size: 13px;
+            letter-spacing: 0.2px;
+            padding: 9px 14px;
+            border-radius: 3px 3px 0 0;
         }
         .stTabs [aria-selected="true"] {
-            color: #19C6E6 !important;
-            background: #0C1B2A;
-            border-bottom: 2px solid #19C6E6;
+            color: #22D3EE !important;
+            background: #0E1A2B;
+            border-bottom: 2px solid #22D3EE;
         }
 
         /* ---- Dataframes ---- */
         div[data-testid="stDataFrame"] {
-            border: 1px solid #1B344D;
-            border-radius: 10px;
+            border: 1px solid #1E3350;
+            border-radius: 4px;
             overflow: hidden;
         }
 
         /* ---- Alerts (st.error/warning/info/success) ---- */
         div[data-testid="stAlert"] {
-            background: #0C1B2A;
-            border: 1px solid #1B344D;
-            border-radius: 10px;
+            background: #0E1A2B;
+            border: 1px solid #1E3350;
+            border-radius: 4px;
         }
 
         /* ---- Expander ---- */
         details {
-            background: #0C1B2A;
-            border: 1px solid #1B344D !important;
-            border-radius: 10px !important;
+            background: #0E1A2B;
+            border: 1px solid #1E3350 !important;
+            border-radius: 4px !important;
         }
         summary {
-            color: #F8FAFC !important;
+            color: #F1F5F9 !important;
             font-weight: 600;
         }
 
         /* ---- Metric (fallback, unused mostly) ---- */
         div[data-testid="stMetric"] {
-            background: #0C1B2A;
-            border: 1px solid #1B344D;
-            border-radius: 12px;
+            background: #0E1A2B;
+            border: 1px solid #1E3350;
+            border-radius: 4px;
             padding: 14px 16px;
         }
 
@@ -204,63 +204,61 @@ def inject_global_css() -> None:
             align-items: center;
             flex-wrap: wrap;
             gap: 12px;
-            padding: 4px 0 18px 0;
+            padding: 2px 0 12px 0;
         }
-        .dt-title { font-size: 30px; font-weight: 700; color: #F8FAFC; line-height: 1.1; margin: 0; }
-        .dt-subtitle { font-size: 13.5px; color: #71839A; margin-top: 2px; }
+        .dt-title { font-size: 20px; font-weight: 700; color: #F1F5F9; line-height: 1.1; margin: 0; letter-spacing: 0.2px; }
+        .dt-subtitle { font-size: 12px; color: #8292A8; margin-top: 2px; }
         .dt-header-right {
-            display: flex; align-items: center; gap: 18px;
-            font-size: 13px; color: #B8C4D4;
+            display: flex; align-items: center; gap: 16px;
+            font-size: 12.5px; color: #CBD5E1;
         }
         .dt-header-chip {
-            color: #B8C4D4; font-weight: 500;
+            color: #CBD5E1; font-weight: 500;
         }
         .dt-live {
             display: inline-flex; align-items: center; gap: 6px;
-            color: #22C55E; font-weight: 700; font-size: 12px; letter-spacing: 0.5px;
+            color: #22C55E; font-weight: 700; font-size: 11px; letter-spacing: 0.5px;
         }
         .dt-live-dot {
-            width: 8px; height: 8px; border-radius: 50%;
+            width: 6px; height: 6px; border-radius: 50%;
             background: #22C55E;
-            box-shadow: 0 0 6px #22C55E;
         }
 
-        .kpi-row { display: flex; gap: 14px; flex-wrap: wrap; margin-bottom: 6px; }
+        .kpi-row { display: flex; gap: 12px; flex-wrap: wrap; margin-bottom: 6px; }
         .kpi-card {
             flex: 1 1 170px;
-            background: #0C1B2A;
-            border: 1px solid #1B344D;
-            border-radius: 12px;
-            padding: 16px 18px;
-            box-shadow: 0 1px 3px rgba(0,0,0,0.25);
+            background: #0E1A2B;
+            border: 1px solid #1E3350;
+            border-radius: 6px;
+            padding: 14px 16px;
         }
         .kpi-label {
-            font-size: 11px; font-weight: 600; letter-spacing: 0.6px;
-            color: #71839A; text-transform: uppercase; margin-bottom: 8px;
+            font-size: 10.5px; font-weight: 600; letter-spacing: 0.6px;
+            color: #8292A8; text-transform: uppercase; margin-bottom: 8px;
         }
-        .kpi-value { font-size: 28px; font-weight: 700; color: #F8FAFC; line-height: 1; }
-        .kpi-value.accent { color: #19C6E6; }
+        .kpi-value { font-size: 24px; font-weight: 700; color: #F1F5F9; line-height: 1; }
+        .kpi-value.accent { color: #22D3EE; }
         .kpi-value.healthy { color: #22C55E; }
         .kpi-value.warning { color: #F59E0B; }
-        .kpi-value.critical { color: #F04444; }
-        .kpi-unit { font-size: 12.5px; color: #71839A; margin-top: 4px; }
+        .kpi-value.critical { color: #EF4444; }
+        .kpi-unit { font-size: 11.5px; color: #8292A8; margin-top: 4px; }
 
         .badge {
             display: inline-flex; align-items: center; gap: 5px;
-            padding: 3px 10px; border-radius: 999px;
-            font-size: 11px; font-weight: 700; letter-spacing: 0.4px;
+            padding: 2px 8px; border-radius: 3px;
+            font-size: 10.5px; font-weight: 700; letter-spacing: 0.4px;
             border: 1px solid; text-transform: uppercase;
         }
-        .badge-healthy { color: #22C55E; border-color: #22C55E; background: rgba(34,197,94,0.10); }
-        .badge-warning { color: #F59E0B; border-color: #F59E0B; background: rgba(245,158,11,0.10); }
-        .badge-critical { color: #F04444; border-color: #F04444; background: rgba(239,68,68,0.10); }
-        .badge-manual { color: #64748B; border-color: #64748B; background: rgba(100,116,139,0.10); }
+        .badge-healthy { color: #22C55E; border-color: #22C55E; background: rgba(34,197,94,0.08); }
+        .badge-warning { color: #F59E0B; border-color: #F59E0B; background: rgba(245,158,11,0.08); }
+        .badge-critical { color: #EF4444; border-color: #EF4444; background: rgba(239,68,68,0.08); }
+        .badge-manual { color: #64748B; border-color: #64748B; background: rgba(100,116,139,0.08); }
 
         .section-header {
-            font-size: 19px; font-weight: 600; color: #F8FAFC;
+            font-size: 15px; font-weight: 600; color: #F1F5F9;
             margin: 4px 0 4px 0;
         }
-        .section-sub { font-size: 12.5px; color: #71839A; margin-bottom: 14px; }
+        .section-sub { font-size: 12.5px; color: #8292A8; margin-bottom: 14px; }
 
         .zone-block { margin-bottom: 22px; }
         .zone-title-row {
@@ -269,276 +267,119 @@ def inject_global_css() -> None:
         }
         .zone-title {
             font-size: 12px; font-weight: 700; letter-spacing: 0.8px;
-            color: #B8C4D4; text-transform: uppercase;
+            color: #CBD5E1; text-transform: uppercase;
         }
-        .zone-meta { font-size: 11.5px; color: #71839A; }
+        .zone-meta { font-size: 11.5px; color: #8292A8; }
 
         .zone-flow { display: flex; align-items: center; flex-wrap: wrap; gap: 0; }
         .connector { color: #334155; font-size: 15px; padding: 0 4px; user-select: none; }
 
         .station-node {
-            background: #112438;
-            border: 1px solid #1B344D;
-            border-radius: 10px;
+            background: #132238;
+            border: 1px solid #1E3350;
+            border-radius: 4px;
             padding: 8px 12px;
             min-width: 76px;
             text-align: center;
             margin: 4px 0;
         }
         .station-node.selected {
-            border-color: #19C6E6;
-            box-shadow: 0 0 0 1px #19C6E6;
+            border: 1px solid #22D3EE;
         }
-        .station-node .sid { font-size: 13px; font-weight: 700; color: #F8FAFC; }
+        .station-node .sid { font-size: 13px; font-weight: 700; color: #F1F5F9; }
         .station-node .stype { font-size: 9.5px; color: #64748B; letter-spacing: 0.4px; margin-top: 1px; }
         .station-node .sdot {
             width: 7px; height: 7px; border-radius: 50%;
             margin: 6px auto 4px auto;
         }
-        .station-node .scycle { font-size: 11px; color: #71839A; }
+        .station-node .scycle { font-size: 11px; color: #8292A8; }
 
         .risk-bar-wrap { margin-bottom: 12px; }
         .risk-bar-label {
             display: flex; justify-content: space-between;
-            font-size: 12px; color: #71839A; margin-bottom: 5px;
+            font-size: 12px; color: #8292A8; margin-bottom: 5px;
         }
         .risk-bar-track {
-            width: 100%; height: 7px; border-radius: 999px;
-            background: #14283C; overflow: hidden;
+            width: 100%; height: 6px; border-radius: 2px;
+            background: #172A42; overflow: hidden;
         }
-        .risk-bar-fill { height: 100%; border-radius: 999px; }
+        .risk-bar-fill { height: 100%; border-radius: 2px; }
 
         .inspector-metric-row {
-            display: flex; justify-content: space-between;
-            padding: 7px 0; border-bottom: 1px solid #14283C;
+            display: flex; justify-content: space-between; align-items: baseline;
+            padding: 7px 0; border-bottom: 1px solid #172A42;
             font-size: 13px;
         }
         .inspector-metric-row:last-child { border-bottom: none; }
-        .inspector-metric-label { color: #71839A; }
-        .inspector-metric-value { color: #F8FAFC; font-weight: 600; }
+        .inspector-metric-label { color: #8292A8; }
+        .inspector-metric-value { color: #F1F5F9; font-weight: 600; }
+        .inspector-metric-delta { font-size: 11px; margin-left: 8px; font-weight: 600; }
+        .delta-up { color: #EF4444; }
+        .delta-down { color: #22C55E; }
+        .delta-flat { color: #64748B; }
 
-        .why-list { font-size: 13px; color: #B8C4D4; line-height: 1.85; margin: 6px 0 0 0; padding-left: 18px; }
+        .factor-row { margin-bottom: 9px; }
+        .factor-row-label {
+            display: flex; justify-content: space-between;
+            font-size: 12px; color: #CBD5E1; margin-bottom: 4px;
+        }
+        .factor-row-track {
+            width: 100%; height: 5px; border-radius: 2px;
+            background: #172A42; overflow: hidden;
+        }
+        .factor-row-fill { height: 100%; border-radius: 2px; background: #3B82F6; }
+
+        .why-list { font-size: 13px; color: #CBD5E1; line-height: 1.85; margin: 6px 0 0 0; padding-left: 18px; }
         .action-box {
-            background: #081624; border: 1px solid #1B344D; border-left: 3px solid #19C6E6;
-            border-radius: 8px; padding: 10px 14px; font-size: 13px; color: #E2E8F0; margin-top: 10px;
+            background: #0A1628; border: 1px solid #1E3350; border-left: 3px solid #22D3EE;
+            border-radius: 3px; padding: 10px 14px; font-size: 13px; color: #E2E8F0; margin-top: 10px;
         }
 
         .alert-card {
-            background: #0C1B2A; border: 1px solid #1B344D;
-            border-radius: 12px; padding: 16px 20px; margin-bottom: 14px;
+            background: #0E1A2B; border: 1px solid #1E3350;
+            border-radius: 4px; padding: 14px 18px; margin-bottom: 12px;
         }
-        .alert-card.critical { border-left: 3px solid #F04444; }
+        .alert-card.critical { border-left: 3px solid #EF4444; }
         .alert-card.warning { border-left: 3px solid #F59E0B; }
         .alert-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; }
-        .alert-station { font-size: 15px; font-weight: 700; color: #F8FAFC; }
+        .alert-station { font-size: 14px; font-weight: 700; color: #F1F5F9; }
 
         .sensor-bar-row { display: flex; align-items: center; gap: 10px; margin-bottom: 8px; }
-        .sensor-bar-label { width: 62px; font-size: 11px; color: #71839A; text-transform: uppercase; letter-spacing: 0.4px; }
-        .sensor-bar-track { flex: 1; height: 8px; border-radius: 999px; background: #14283C; overflow: hidden; }
-        .sensor-bar-fill { height: 100%; border-radius: 999px; }
-        .sensor-bar-pct { width: 40px; text-align: right; font-size: 12px; color: #B8C4D4; font-weight: 600; }
+        .sensor-bar-label { width: 62px; font-size: 11px; color: #8292A8; text-transform: uppercase; letter-spacing: 0.4px; }
+        .sensor-bar-track { flex: 1; height: 6px; border-radius: 2px; background: #172A42; overflow: hidden; }
+        .sensor-bar-fill { height: 100%; border-radius: 2px; }
+        .sensor-bar-pct { width: 40px; text-align: right; font-size: 12px; color: #CBD5E1; font-weight: 600; }
 
         .manual-coverage-box {
-            background: #081624; border: 1px solid #1B344D; border-radius: 10px;
+            background: #0A1628; border: 1px solid #1E3350; border-radius: 4px;
             padding: 12px 14px; margin-top: 10px;
         }
         .manual-coverage-title { font-size: 11px; font-weight: 700; letter-spacing: 0.5px; color: #64748B; margin-bottom: 6px; }
 
         .biz-card {
-            background: #0C1B2A; border: 1px solid #1B344D; border-radius: 12px;
-            padding: 20px 22px;
+            background: #0E1A2B; border: 1px solid #1E3350; border-radius: 4px;
+            padding: 18px 20px;
         }
-        .biz-label { font-size: 11.5px; font-weight: 600; letter-spacing: 0.5px; color: #71839A; text-transform: uppercase; margin-bottom: 10px; }
-        .biz-value { font-size: 30px; font-weight: 700; color: #F8FAFC; }
-        .biz-note { font-size: 11.5px; color: #64748B; margin-top: 6px; }
+        .biz-label { font-size: 11px; font-weight: 600; letter-spacing: 0.5px; color: #8292A8; text-transform: uppercase; margin-bottom: 10px; }
+        .biz-value { font-size: 26px; font-weight: 700; color: #F1F5F9; }
+        .biz-note { font-size: 11px; color: #64748B; margin-top: 6px; }
 
         .phase-card {
-            background: #0C1B2A; border: 1px solid #1B344D; border-radius: 12px;
-            padding: 16px 18px; text-align: left;
+            background: #0E1A2B; border: 1px solid #1E3350; border-radius: 4px;
+            padding: 14px 16px; text-align: left;
         }
-        .phase-num { font-size: 10.5px; font-weight: 700; letter-spacing: 0.6px; color: #19C6E6; margin-bottom: 6px; }
-        .phase-title { font-size: 14px; font-weight: 600; color: #F8FAFC; }
+        .phase-num { font-size: 10px; font-weight: 700; letter-spacing: 0.6px; color: #22D3EE; margin-bottom: 6px; }
+        .phase-title { font-size: 13px; font-weight: 600; color: #F1F5F9; }
 
         .journey-row { display: flex; align-items: center; flex-wrap: wrap; gap: 6px; margin: 14px 0; }
         .journey-step {
             display: flex; align-items: center; gap: 6px;
-            background: #112438; border: 1px solid #1B344D; border-radius: 8px;
-            padding: 6px 10px; font-size: 12px; color: #B8C4D4;
+            background: #132238; border: 1px solid #1E3350; border-radius: 3px;
+            padding: 6px 10px; font-size: 12px; color: #CBD5E1;
         }
         .journey-step.flagged { border-color: #F59E0B; color: #F59E0B; }
-        .journey-step.current { border-color: #19C6E6; color: #19C6E6; }
+        .journey-step.current { border-color: #22D3EE; color: #22D3EE; }
         .journey-arrow { color: #334155; font-size: 13px; }
-
-        /* ---- Polished command-center additions ---- */
-        .dt-header {
-            background: linear-gradient(180deg, rgba(17,36,56,0.35), rgba(6,16,28,0));
-            border-radius: 14px;
-            padding: 14px 16px 18px 16px;
-        }
-
-        .kpi-card {
-            position: relative;
-            overflow: hidden;
-            min-height: 92px;
-        }
-        .kpi-card::after {
-            content: "";
-            position: absolute;
-            left: 18px;
-            right: 18px;
-            bottom: 0;
-            height: 1px;
-            background: linear-gradient(90deg, transparent, rgba(25,198,230,0.22), transparent);
-        }
-
-        .zone-summary-row {
-            display: grid;
-            grid-template-columns: repeat(3, minmax(0, 1fr));
-            gap: 10px;
-            margin: 8px 0 18px 0;
-        }
-        .zone-summary-card {
-            background: #0C1B2A;
-            border: 1px solid #1B344D;
-            border-radius: 11px;
-            padding: 12px 14px;
-            min-height: 74px;
-        }
-        .zone-summary-top {
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            gap: 10px;
-        }
-        .zone-summary-title {
-            font-size: 11px;
-            letter-spacing: 0.7px;
-            font-weight: 700;
-            color: #B8C4D4;
-        }
-        .zone-summary-meta {
-            margin-top: 8px;
-            font-size: 12px;
-            color: #71839A;
-        }
-        .zone-health-dot {
-            width: 8px;
-            height: 8px;
-            border-radius: 999px;
-            display: inline-block;
-            box-shadow: 0 0 8px currentColor;
-        }
-
-        .station-node {
-            position: relative;
-            transition: transform 0.14s ease, border-color 0.14s ease, box-shadow 0.14s ease;
-        }
-        .station-node:hover {
-            transform: translateY(-2px);
-            border-color: #315170;
-        }
-        .station-node.status-warning {
-            border-color: rgba(245,158,11,0.48);
-        }
-        .station-node.status-critical {
-            border-color: rgba(240,68,68,0.65);
-            box-shadow: 0 0 0 1px rgba(240,68,68,0.10), 0 0 18px rgba(240,68,68,0.08);
-        }
-        .station-node.status-critical::before {
-            content: "";
-            position: absolute;
-            inset: -1px;
-            border: 1px solid rgba(240,68,68,0.38);
-            border-radius: 10px;
-            animation: dtPulse 1.9s ease-out infinite;
-            pointer-events: none;
-        }
-        @keyframes dtPulse {
-            0% { opacity: 0.65; transform: scale(1); }
-            70% { opacity: 0; transform: scale(1.07); }
-            100% { opacity: 0; transform: scale(1.07); }
-        }
-
-        .inspector-shell {
-            background: linear-gradient(180deg, rgba(17,36,56,0.60), rgba(12,27,42,0.45));
-            border: 1px solid #1B344D;
-            border-radius: 14px;
-            padding: 15px 16px;
-            margin-bottom: 12px;
-        }
-        .quick-metric-grid {
-            display: grid;
-            grid-template-columns: repeat(2, minmax(0, 1fr));
-            gap: 8px;
-            margin-top: 10px;
-        }
-        .quick-metric {
-            background: #081624;
-            border: 1px solid #14283C;
-            border-radius: 9px;
-            padding: 10px 11px;
-        }
-        .quick-metric-label {
-            font-size: 10px;
-            text-transform: uppercase;
-            letter-spacing: 0.55px;
-            color: #71839A;
-            margin-bottom: 5px;
-        }
-        .quick-metric-value {
-            font-size: 16px;
-            line-height: 1.1;
-            font-weight: 700;
-            color: #F8FAFC;
-        }
-        .quick-metric-delta {
-            font-size: 10.5px;
-            color: #71839A;
-            margin-top: 3px;
-        }
-
-        .line-health-banner {
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            gap: 16px;
-            flex-wrap: wrap;
-            background: linear-gradient(90deg, rgba(25,198,230,0.06), rgba(12,27,42,0.85));
-            border: 1px solid #1B344D;
-            border-radius: 12px;
-            padding: 12px 15px;
-            margin-bottom: 14px;
-        }
-        .line-health-title {
-            font-size: 12px;
-            font-weight: 700;
-            letter-spacing: 0.55px;
-            color: #F8FAFC;
-        }
-        .line-health-sub {
-            font-size: 11.5px;
-            color: #71839A;
-            margin-top: 3px;
-        }
-        .line-health-risk {
-            font-size: 12px;
-            color: #B8C4D4;
-        }
-
-        .trend-label {
-            font-size: 10.5px;
-            letter-spacing: 0.5px;
-            color: #71839A;
-            text-transform: uppercase;
-            margin: 12px 0 4px 0;
-            font-weight: 700;
-        }
-
-        @media (max-width: 900px) {
-            .zone-summary-row { grid-template-columns: 1fr; }
-            .quick-metric-grid { grid-template-columns: 1fr 1fr; }
-        }
-
         </style>
         """,
         unsafe_allow_html=True,
@@ -549,18 +390,19 @@ def inject_global_css() -> None:
 # RENDER HELPERS
 # =============================================================================
 
-def clean_html(fragment: str) -> str:
-    """Flatten HTML fragments so Markdown never treats indentation as a code block."""
-    return " ".join(
-        line.strip()
-        for line in fragment.splitlines()
-        if line.strip()
-    )
+def _clean_html(s: str) -> str:
+    """Collapse a triple-quoted HTML fragment into a single unindented
+    line. Streamlit's markdown renderer treats any line indented 4+
+    spaces as a fenced code block, so an indented multi-line f-string
+    (fine on its own) can get rendered as literal text once it's
+    concatenated with sibling fragments into one st.markdown() call.
+    Flattening removes the indentation before that can happen."""
+    return " ".join(line.strip() for line in s.strip().splitlines())
 
 
 def render_header(step: int, n_stations: int) -> None:
     st.markdown(
-        clean_html(f"""
+        _clean_html(f"""
         <div class="dt-header">
             <div>
                 <p class="dt-title">DigitalTwin.ai</p>
@@ -573,10 +415,10 @@ def render_header(step: int, n_stations: int) -> None:
                 <span class="dt-live"><span class="dt-live-dot"></span> LIVE</span>
             </div>
         </div>
-        <hr/>
         """),
         unsafe_allow_html=True,
     )
+    st.markdown("<hr/>", unsafe_allow_html=True)
 
 
 def _kpi_value_class(status: str | None) -> str:
@@ -590,7 +432,7 @@ def _kpi_value_class(status: str | None) -> str:
 
 def render_kpi_card(label: str, value: str, unit: str = "", status: str | None = None) -> str:
     cls = _kpi_value_class(status)
-    return clean_html(f"""
+    return _clean_html(f"""
         <div class="kpi-card">
             <div class="kpi-label">{html.escape(label)}</div>
             <div class="kpi-value {cls}">{html.escape(value)}</div>
@@ -618,7 +460,7 @@ def render_risk_bar(label: str, value: float) -> str:
         color = WARNING
     else:
         color = HEALTHY
-    return clean_html(f"""
+    return _clean_html(f"""
         <div class="risk-bar-wrap">
             <div class="risk-bar-label"><span>{html.escape(label)}</span><span>{pct:.0f}%</span></div>
             <div class="risk-bar-track"><div class="risk-bar-fill" style="width:{pct:.1f}%; background:{color};"></div></div>
@@ -630,10 +472,9 @@ def render_station_node(row: pd.Series, selected: bool) -> str:
     color = STATUS_COLOR.get(row["status"], MANUAL)
     dot_color = MANUAL if row["sensor_level"] == "manual" else color
     sel_class = " selected" if selected else ""
-    status_class = f" status-{str(row['status']).lower()}"
     zone_short = str(row["station_type"]).upper()
-    return clean_html(f"""
-        <div class="station-node{sel_class}{status_class}">
+    return _clean_html(f"""
+        <div class="station-node{sel_class}">
             <div class="sid">{html.escape(str(row['station_id']))}</div>
             <div class="stype">{html.escape(zone_short)}</div>
             <div class="sdot" style="background:{dot_color}; box-shadow:0 0 5px {dot_color};"></div>
@@ -653,7 +494,7 @@ def render_zone(zone_key: str, rows: pd.DataFrame, selected_station: str) -> Non
         if i < len(rows) - 1:
             nodes_html.append('<span class="connector">→</span>')
     st.markdown(
-        clean_html(f"""
+        _clean_html(f"""
         <div class="zone-block">
             <div class="zone-title-row">
                 <span class="zone-title">{html.escape(ZONE_LABELS.get(zone_key, str(zone_key).upper()))}</span>
@@ -672,7 +513,7 @@ def render_section_header(title: str, subtitle: str | None = None) -> None:
 
 
 def render_manual_coverage_box(confidence: float) -> str:
-    return clean_html(f"""
+    return _clean_html(f"""
         <div class="manual-coverage-box">
             <div class="manual-coverage-title">MANUAL COVERAGE</div>
             <div class="inspector-metric-row">
@@ -683,7 +524,7 @@ def render_manual_coverage_box(confidence: float) -> str:
                 <span class="inspector-metric-label">Twin confidence</span>
                 <span class="inspector-metric-value">{confidence*100:.0f}%</span>
             </div>
-            <div style="font-size:12px; color:#71839A; margin-top:6px;">
+            <div style="font-size:12px; color:#8292A8; margin-top:6px;">
                 Inferred using: cycle time • queue behavior • upstream/downstream context • manual inspection
             </div>
         </div>
@@ -696,75 +537,50 @@ def fmt_or_na(value: float, fmt: str) -> str:
     return fmt.format(value)
 
 
-def render_zone_summary(scored_df: pd.DataFrame) -> None:
-    cards = []
-    for zone_key in ZONE_ORDER:
-        rows = scored_df.loc[scored_df["station_type"].eq(zone_key)]
-        if rows.empty:
-            continue
-        critical = int((rows["status"] == "Critical").sum())
-        warning = int((rows["status"] == "Warning").sum())
-        if critical:
-            health, color = "CRITICAL", CRITICAL
-        elif warning:
-            health, color = "WARNING", WARNING
-        else:
-            health, color = "HEALTHY", HEALTHY
-        title = ZONE_LABELS.get(zone_key, str(zone_key).upper())
-        cards.append(clean_html(f"""
-            <div class="zone-summary-card">
-                <div class="zone-summary-top">
-                    <span class="zone-summary-title">{html.escape(title)}</span>
-                    <span style="display:flex;align-items:center;gap:7px;color:{color};font-size:10.5px;font-weight:700;">
-                        <span class="zone-health-dot" style="background:{color};color:{color};"></span>{health}
-                    </span>
-                </div>
-                <div class="zone-summary-meta">
-                    {len(rows)} stations · {warning} warning{"s" if warning != 1 else ""} · {critical} critical
-                </div>
+def render_metric_delta(value: float, baseline_key: str) -> str:
+    """Small ↑/↓ vs. baseline indicator next to a process-condition row.
+    Reuses BASELINES already defined in prediction.py — purely a display
+    computation, no change to how risk is scored."""
+    if pd.isna(value):
+        return ""
+    baseline = BASELINES.get(baseline_key)
+    if not baseline:
+        return ""
+    dev = (value - baseline) / baseline * 100.0
+    if abs(dev) < 3:
+        return '<span class="inspector-metric-delta delta-flat">— baseline</span>'
+    arrow = "↑" if dev > 0 else "↓"
+    cls = "delta-up" if dev > 0 else "delta-down"
+    return f'<span class="inspector-metric-delta {cls}">{arrow} {abs(dev):.1f}%</span>'
+
+
+_FACTOR_RE = re.compile(r"^(.*?) is (\d+)% (above|below) baseline")
+
+
+def render_contributing_factors(reasons: list[str]) -> str:
+    """Parses the ranked, quantified reason strings already produced by
+    explain_station() (e.g. 'cycle time is 42% above baseline (...)') into
+    compact horizontal factor bars, instead of re-deriving contributions
+    from scratch."""
+    parsed = []
+    for r in reasons:
+        m = _FACTOR_RE.match(r)
+        if m:
+            label, pct, direction = m.group(1).capitalize(), int(m.group(2)), m.group(3)
+            parsed.append((label, pct, direction))
+    if not parsed:
+        return '<div style="font-size:12.5px; color:#8292A8;">No single factor deviates enough from baseline to rank.</div>'
+    max_pct = max(p for _, p, _ in parsed) or 1
+    rows = []
+    for label, pct, direction in parsed[:5]:
+        width = max(6, min(100, pct / max_pct * 100))
+        rows.append(_clean_html(f"""
+            <div class="factor-row">
+                <div class="factor-row-label"><span>{html.escape(label)} ({direction} baseline)</span><span>{pct}%</span></div>
+                <div class="factor-row-track"><div class="factor-row-fill" style="width:{width:.0f}%;"></div></div>
             </div>
         """))
-    if cards:
-        st.markdown(
-            f'<div class="zone-summary-row">{"".join(cards)}</div>',
-            unsafe_allow_html=True,
-        )
-
-
-def render_quick_metric(label: str, value: str, delta: str = "") -> str:
-    delta_html = f'<div class="quick-metric-delta">{html.escape(delta)}</div>' if delta else ""
-    return clean_html(f"""
-        <div class="quick-metric">
-            <div class="quick-metric-label">{html.escape(label)}</div>
-            <div class="quick-metric-value">{html.escape(value)}</div>
-            {delta_html}
-        </div>
-    """)
-
-
-def style_sparkline(fig: go.Figure, height: int = 118) -> go.Figure:
-    fig.update_layout(
-        height=height,
-        paper_bgcolor="rgba(0,0,0,0)",
-        plot_bgcolor="rgba(0,0,0,0)",
-        margin=dict(l=0, r=0, t=4, b=0),
-        showlegend=False,
-        hovermode="x unified",
-        font=dict(color=TEXT_MUTED, family="Inter, sans-serif", size=10),
-    )
-    fig.update_xaxes(
-        visible=False,
-        showgrid=False,
-        zeroline=False,
-        fixedrange=True,
-    )
-    fig.update_yaxes(
-        visible=False,
-        showgrid=False,
-        zeroline=False,
-        fixedrange=True,
-    )
-    return fig
+    return "".join(rows)
 
 
 # =============================================================================
@@ -789,14 +605,10 @@ config = get_config()
 
 if "step" not in st.session_state:
     st.session_state.step = 0
-if "simulation_seed" not in st.session_state:
-    st.session_state.simulation_seed = 42
 if "line" not in st.session_state:
     st.session_state.line = initial_line(config=config)
 if "history" not in st.session_state:
     st.session_state.history = []
-if "station_history" not in st.session_state:
-    st.session_state.station_history = []
 if "vehicles" not in st.session_state:
     st.session_state.vehicles = spawn_vehicles(
         st.session_state.line["station_id"].tolist(), config=config
@@ -812,7 +624,7 @@ if "feedback" not in st.session_state:
 
 with st.sidebar:
     st.markdown(
-        '<div style="font-size:12px; font-weight:700; letter-spacing:0.6px; color:#71839A; margin-bottom:10px;">'
+        '<div style="font-size:12px; font-weight:700; letter-spacing:0.6px; color:#8292A8; margin-bottom:10px;">'
         "SIMULATION CONTROL</div>",
         unsafe_allow_html=True,
     )
@@ -834,10 +646,8 @@ with st.sidebar:
 
     if reset:
         st.session_state.step = 0
-        st.session_state.simulation_seed += 101
         st.session_state.line = initial_line(config=config)
         st.session_state.history = []
-        st.session_state.station_history = []
         st.session_state.vehicles = spawn_vehicles(
             st.session_state.line["station_id"].tolist(), config=config
         )
@@ -851,12 +661,11 @@ with st.sidebar:
             st.session_state.line,
             st.session_state.step,
             scenario=scenario,
-            seed=st.session_state.simulation_seed,
         )
 
     st.markdown("<hr/>", unsafe_allow_html=True)
     st.markdown(
-        '<div style="font-size:12px; font-weight:700; letter-spacing:0.6px; color:#71839A; margin-bottom:8px;">'
+        '<div style="font-size:12px; font-weight:700; letter-spacing:0.6px; color:#8292A8; margin-bottom:8px;">'
         "ACTIVE SCENARIO</div>",
         unsafe_allow_html=True,
     )
@@ -866,8 +675,8 @@ with st.sidebar:
         "Sensor-poor station": "S20",
     }.get(scenario, "—")
     st.markdown(
-        clean_html(f"""
-        <div style="font-size:14px; color:#F8FAFC; font-weight:600; margin-bottom:6px;">{html.escape(scenario)}</div>
+        _clean_html(f"""
+        <div style="font-size:14px; color:#F1F5F9; font-weight:600; margin-bottom:6px;">{html.escape(scenario)}</div>
         <div class="inspector-metric-row"><span class="inspector-metric-label">Target station</span><span class="inspector-metric-value">{html.escape(scenario_target)}</span></div>
         <div class="inspector-metric-row"><span class="inspector-metric-label">Simulation step</span><span class="inspector-metric-value">{st.session_state.step}</span></div>
         """),
@@ -933,25 +742,9 @@ if advance:
         "total_queue": int(scored["queue_length"].sum()),
     })
 
-    snapshot_cols = [
-        "station_id", "cycle_time", "queue_length", "throughput",
-        "bottleneck_risk", "defect_risk", "confidence",
-    ]
-    for snapshot in scored[snapshot_cols].to_dict("records"):
-        snapshot["step"] = st.session_state.step
-        snapshot["scenario"] = scenario
-        st.session_state.station_history.append(snapshot)
-    st.session_state.station_history = st.session_state.station_history[-3000:]
-
 hist_df = pd.DataFrame(st.session_state.history).drop_duplicates(
     subset=["step", "scenario"], keep="last"
 ).tail(100)
-
-station_hist_df = pd.DataFrame(st.session_state.station_history)
-if not station_hist_df.empty:
-    station_hist_df = station_hist_df.drop_duplicates(
-        subset=["step", "scenario", "station_id"], keep="last"
-    ).tail(3000)
 
 # =============================================================================
 # HEADER + KPI ROW
@@ -998,184 +791,25 @@ tab1, tab2, tab3, tab4, tab5 = st.tabs([
 # -----------------------------------------------------------------------
 with tab1:
     station_options = scored["station_id"].tolist()
-
-    # High-level line-health banner
-    top_risk_row = scored.loc[
-        scored[["bottleneck_risk", "defect_risk"]].max(axis=1).idxmax()
-    ]
-    overall_status = (
-        "CRITICAL" if critical_count
-        else ("WARNING" if warning_count else "HEALTHY")
-    )
-    overall_color = (
-        CRITICAL if critical_count
-        else (WARNING if warning_count else HEALTHY)
-    )
-    st.markdown(
-        clean_html(f"""
-        <div class="line-health-banner">
-            <div>
-                <div class="line-health-title">LINE HEALTH · {overall_status}</div>
-                <div class="line-health-sub">
-                    {len(scored)}-station mixed-model assembly line · predictive monitoring active
-                </div>
-            </div>
-            <div class="line-health-risk">
-                Highest current risk:
-                <strong style="color:{overall_color};">{html.escape(str(top_risk_row["station_id"]))}</strong>
-                · {max(float(top_risk_row["bottleneck_risk"]), float(top_risk_row["defect_risk"])) * 100:.0f}%
-            </div>
-        </div>
-        """),
-        unsafe_allow_html=True,
-    )
-
-    render_zone_summary(scored)
-
-    # Give the actual twin most of the width; inspector is intentionally narrower.
-    left, right = st.columns([1.72, 0.88], gap="large")
-
-    with left:
-        render_section_header(
-            "Factory Line",
-            "BODY → PAINT → FINAL ASSEMBLY · live station health and process flow",
-        )
-
-        # Selection remains a native Streamlit control for reliability, while the
-        # map visually highlights the chosen station.
-        selected_default = st.session_state.get("live_twin_station_select", station_options[0])
-        if selected_default not in station_options:
-            selected_default = station_options[0]
-
-        for zone_key in ZONE_ORDER:
-            zone_rows = scored.loc[scored["station_type"].eq(zone_key)]
-            render_zone(zone_key, zone_rows, selected_default)
-
-        other_types = [t for t in scored["station_type"].unique() if t not in ZONE_ORDER]
-        for zone_key in other_types:
-            zone_rows = scored.loc[scored["station_type"].eq(zone_key)]
-            render_zone(zone_key, zone_rows, selected_default)
-
-        st.markdown("<hr/>", unsafe_allow_html=True)
-
-        render_section_header("Predictive Outlook", "Prototype trend estimate")
-        current_risk = float(scored["bottleneck_risk"].max())
-        top_row = scored.loc[scored["bottleneck_risk"].idxmax()]
-        target_station = str(top_row["station_id"])
-
-        projected_risk = current_risk
-        steps_to_critical = None
-
-        if not station_hist_df.empty:
-            recent = (
-                station_hist_df[
-                    station_hist_df["station_id"].eq(target_station)
-                ]
-                .sort_values("step")
-                .tail(8)
-            )
-
-            if len(recent) >= 3:
-                x = recent["step"].to_numpy(dtype=float)
-                y = recent["bottleneck_risk"].to_numpy(dtype=float)
-
-                if len(set(x)) > 1:
-                    slope, intercept = np.polyfit(x, y, 1)
-                    next_step = x[-1] + 5
-                    projected_risk = float(
-                        np.clip(slope * next_step + intercept, 0.0, 1.0)
-                    )
-
-                    if slope > 0.001:
-                        remaining = (0.75 - y[-1]) / slope
-                        if remaining > 0:
-                            steps_to_critical = max(
-                                1,
-                                int(round(remaining)),
-                            )
-
-        pcol1, pcol2, pcol3 = st.columns(3)
-        pcol1.markdown(
-            render_kpi_card(
-                "Current Bottleneck Risk",
-                f"{current_risk*100:.0f}%",
-                str(top_row["station_id"]),
-            ),
-            unsafe_allow_html=True,
-        )
-        pcol2.markdown(
-            render_kpi_card(
-                "Projected Risk",
-                f"{projected_risk*100:.0f}%",
-                "+5 steps ahead",
-                status=(
-                    "critical" if projected_risk >= 0.75
-                    else ("warning" if projected_risk >= 0.55 else "healthy")
-                ),
-            ),
-            unsafe_allow_html=True,
-        )
-        eta_text = (
-            f"~{steps_to_critical} sim. steps"
-            if steps_to_critical
-            else "Stable"
-        )
-        pcol3.markdown(
-            render_kpi_card(
-                "Critical ETA",
-                eta_text,
-                "at current trend",
-                status="warning" if steps_to_critical else "healthy",
-            ),
-            unsafe_allow_html=True,
-        )
-        st.caption(
-            "Prototype trend estimate — a simple linear projection of recent "
-            "bottleneck-risk history, not a production-grade forecasting model."
-        )
+    left, right = st.columns([1.35, 1])
 
     with right:
-        render_section_header(
-            "Station Inspector",
-            "Select a station to inspect risk, process conditions and recent trend",
-        )
+        render_section_header("Station Inspector")
         station = st.selectbox(
-            "Select station",
-            station_options,
-            key="live_twin_station_select",
+            "Select station", station_options, key="live_twin_station_select",
             label_visibility="collapsed",
         )
         row = scored.loc[scored["station_id"].eq(station)].iloc[0]
         reasons, action = explain_station(row)
 
-        baseline_cycle = 48.0
-        cycle_delta = ((float(row["cycle_time"]) - baseline_cycle) / baseline_cycle) * 100
-        cycle_delta_text = f"{cycle_delta:+.0f}% vs baseline"
-        queue_delta_text = "Upstream WIP"
-        throughput_delta_text = "Current line rate"
-        vibration_text = fmt_or_na(row["vibration"], "{:.2f} mm/s")
-
-        quick_metrics = "".join([
-            render_quick_metric("Cycle Time", f'{row["cycle_time"]:.1f} sec', cycle_delta_text),
-            render_quick_metric("Queue", f'{int(row["queue_length"])} units', queue_delta_text),
-            render_quick_metric("Throughput", f'{row["throughput"]:.1f}/hr', throughput_delta_text),
-            render_quick_metric("Vibration", vibration_text, "Machine condition"),
-        ])
-
         st.markdown(
-            clean_html(f"""
-            <div class="inspector-shell">
-                <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:12px;">
-                    <div>
-                        <div style="font-size:19px; font-weight:700; color:#F8FAFC;">{html.escape(str(row["station_id"]))}</div>
-                        <div style="font-size:12px; color:#71839A;">
-                            {html.escape(ZONE_LABELS.get(row["station_type"], str(row["station_type"])))}
-                            · {html.escape(str(row["sensor_level"]).upper())} sensing
-                        </div>
-                    </div>
-                    {render_status_badge(row["status"])}
+            _clean_html(f"""
+            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:14px;">
+                <div>
+                    <div style="font-size:18px; font-weight:700; color:#F1F5F9;">{html.escape(row['station_id'])}</div>
+                    <div style="font-size:12.5px; color:#8292A8;">{html.escape(ZONE_LABELS.get(row['station_type'], row['station_type']))}</div>
                 </div>
-                <div class="quick-metric-grid">{quick_metrics}</div>
+                {render_status_badge(row['status'])}
             </div>
             """),
             unsafe_allow_html=True,
@@ -1185,105 +819,95 @@ with tab1:
         st.markdown(render_risk_bar("Defect Risk", row["defect_risk"]), unsafe_allow_html=True)
         st.markdown(render_risk_bar("Prediction Confidence", row["confidence"]), unsafe_allow_html=True)
 
-        # Recent selected-station sparklines
-        st.markdown('<div class="trend-label">Recent station trend</div>', unsafe_allow_html=True)
-        selected_hist = (
-            station_hist_df.loc[station_hist_df["station_id"].eq(station)].sort_values("step")
-            if not station_hist_df.empty
-            else pd.DataFrame()
-        )
-
-        if len(selected_hist) >= 2:
-            sc1, sc2 = st.columns(2)
-            with sc1:
-                fig_cycle_spark = go.Figure()
-                fig_cycle_spark.add_trace(go.Scatter(
-                    x=selected_hist["step"],
-                    y=selected_hist["cycle_time"],
-                    mode="lines+markers",
-                    line=dict(color=ACCENT_CYAN, width=2),
-                    marker=dict(size=4),
-                    fill="tozeroy",
-                    fillcolor="rgba(25,198,230,0.05)",
-                    hovertemplate="Step %{x}<br>%{y:.1f}s<extra></extra>",
-                ))
-                st.caption("Cycle time")
-                st.plotly_chart(
-                    style_sparkline(fig_cycle_spark),
-                    use_container_width=True,
-                    config={"displayModeBar": False},
-                    key=f"cycle_spark_{station}",
-                )
-            with sc2:
-                risk_color = (
-                    CRITICAL if row["bottleneck_risk"] >= 0.75
-                    else (WARNING if row["bottleneck_risk"] >= 0.55 else HEALTHY)
-                )
-                fig_risk_spark = go.Figure()
-                fig_risk_spark.add_trace(go.Scatter(
-                    x=selected_hist["step"],
-                    y=selected_hist["bottleneck_risk"],
-                    mode="lines+markers",
-                    line=dict(color=risk_color, width=2),
-                    marker=dict(size=4),
-                    fill="tozeroy",
-                    fillcolor="rgba(240,68,68,0.04)",
-                    hovertemplate="Step %{x}<br>%{y:.0%}<extra></extra>",
-                ))
-                fig_risk_spark.update_yaxes(range=[0, 1])
-                st.caption("Bottleneck risk")
-                st.plotly_chart(
-                    style_sparkline(fig_risk_spark),
-                    use_container_width=True,
-                    config={"displayModeBar": False},
-                    key=f"risk_spark_{station}",
-                )
-        else:
-            st.caption("Advance the simulation at least twice to build station trend history.")
-
-        why_items = "".join(
-            f"<li>{html.escape(r.capitalize())}.</li>" for r in reasons[:3]
-        )
         st.markdown(
-            '<div style="font-size:11px;font-weight:700;letter-spacing:0.5px;color:#71839A;margin:12px 0 4px 0;">'
-            f'WHY IT WAS FLAGGED</div><ul class="why-list">{why_items}</ul>',
+            '<div style="font-size:11px; font-weight:700; letter-spacing:0.5px; color:#8292A8; margin:14px 0 4px 0;">'
+            "PROCESS CONDITIONS</div>",
             unsafe_allow_html=True,
         )
+        metrics_html = "".join([
+            f'<div class="inspector-metric-row"><span class="inspector-metric-label">Cycle Time</span>'
+            f'<span><span class="inspector-metric-value">{row["cycle_time"]:.1f} sec</span>{render_metric_delta(row["cycle_time"], "cycle_time")}</span></div>',
+            f'<div class="inspector-metric-row"><span class="inspector-metric-label">Queue</span>'
+            f'<span><span class="inspector-metric-value">{int(row["queue_length"])}</span>{render_metric_delta(row["queue_length"], "queue_length")}</span></div>',
+            f'<div class="inspector-metric-row"><span class="inspector-metric-label">Throughput</span>'
+            f'<span><span class="inspector-metric-value">{row["throughput"]:.1f} units/hr</span>{render_metric_delta(row["throughput"], "throughput")}</span></div>',
+            f'<div class="inspector-metric-row"><span class="inspector-metric-label">Vibration</span>'
+            f'<span><span class="inspector-metric-value">{fmt_or_na(row["vibration"], "{:.2f} mm/s")}</span>{render_metric_delta(row["vibration"], "vibration")}</span></div>',
+            f'<div class="inspector-metric-row"><span class="inspector-metric-label">Temperature</span>'
+            f'<span><span class="inspector-metric-value">{fmt_or_na(row["temperature"], "{:.1f} °C")}</span>{render_metric_delta(row["temperature"], "temperature")}</span></div>',
+            f'<div class="inspector-metric-row"><span class="inspector-metric-label">Torque</span>'
+            f'<span><span class="inspector-metric-value">{fmt_or_na(row["torque"], "{:.1f} Nm")}</span>{render_metric_delta(row["torque"], "torque")}</span></div>',
+            f'<div class="inspector-metric-row"><span class="inspector-metric-label">Downtime</span>'
+            f'<span><span class="inspector-metric-value">{row["downtime_min"]:.1f} min</span>{render_metric_delta(row["downtime_min"], "downtime_min")}</span></div>',
+        ])
+        st.markdown(metrics_html, unsafe_allow_html=True)
+
         st.markdown(
-            '<div style="font-size:11px;font-weight:700;letter-spacing:0.5px;color:#71839A;margin:12px 0 4px 0;">'
+            '<div style="font-size:11px; font-weight:700; letter-spacing:0.5px; color:#8292A8; margin:16px 0 6px 0;">'
+            "CONTRIBUTING FACTORS</div>",
+            unsafe_allow_html=True,
+        )
+        st.markdown(render_contributing_factors(reasons), unsafe_allow_html=True)
+
+        st.markdown(
+            '<div style="font-size:11px; font-weight:700; letter-spacing:0.5px; color:#8292A8; margin:14px 0 4px 0;">'
             f'RECOMMENDED ACTION</div><div class="action-box">{html.escape(action)}</div>',
             unsafe_allow_html=True,
         )
 
-        with st.expander("More process details"):
-            detailed_metrics = pd.DataFrame({
-                "Metric": [
-                    "Temperature",
-                    "Torque",
-                    "Downtime",
-                    "Anomaly score",
-                    "Sensor coverage",
-                ],
-                "Value": [
-                    fmt_or_na(row["temperature"], "{:.1f} °C"),
-                    fmt_or_na(row["torque"], "{:.1f} Nm"),
-                    f'{row["downtime_min"]:.1f} min',
-                    f'{row["anomaly_score"]*100:.0f}%',
-                    str(row["sensor_level"]).title(),
-                ],
-            })
-            st.dataframe(
-                detailed_metrics,
-                hide_index=True,
-                use_container_width=True,
-            )
-
         if row["sensor_level"] in ("partial", "manual"):
-            st.markdown(
-                render_manual_coverage_box(row["confidence"]),
-                unsafe_allow_html=True,
-            )
-            st.caption("🔧 " + maintenance_window_note(config))
+            st.markdown(render_manual_coverage_box(row["confidence"]), unsafe_allow_html=True)
+            st.caption("Note: " + maintenance_window_note(config))
+
+    with left:
+        render_section_header("Factory Line", "Live station health across the assembly line")
+        for zone_key in ZONE_ORDER:
+            zone_rows = scored.loc[scored["station_type"].eq(zone_key)]
+            render_zone(zone_key, zone_rows, station)
+        other_types = [t for t in scored["station_type"].unique() if t not in ZONE_ORDER]
+        for zone_key in other_types:
+            zone_rows = scored.loc[scored["station_type"].eq(zone_key)]
+            render_zone(zone_key, zone_rows, station)
+
+        st.markdown("<hr/>", unsafe_allow_html=True)
+
+        render_section_header("Predictive Outlook", "Prototype trend estimate")
+        current_risk = float(scored["bottleneck_risk"].max())
+        top_row = scored.loc[scored["bottleneck_risk"].idxmax()]
+
+        projected_risk = current_risk
+        steps_to_critical = None
+        if len(hist_df) >= 3:
+            recent = hist_df.tail(8)
+            x = recent["step"].to_numpy(dtype=float)
+            y = recent["max_bottleneck_risk"].to_numpy(dtype=float)
+            if len(set(x)) > 1:
+                slope, intercept = np.polyfit(x, y, 1)
+                next_step = x[-1] + 5
+                projected_risk = float(np.clip(slope * next_step + intercept, 0.0, 1.0))
+                if slope > 0.001:
+                    remaining = (0.75 - y[-1]) / slope
+                    if remaining > 0:
+                        steps_to_critical = max(1, int(round(remaining)))
+
+        pcol1, pcol2, pcol3 = st.columns(3)
+        pcol1.markdown(
+            render_kpi_card("Current Bottleneck Risk", f"{current_risk*100:.0f}%", str(top_row["station_id"])),
+            unsafe_allow_html=True,
+        )
+        pcol2.markdown(
+            render_kpi_card(
+                "Projected Risk", f"{projected_risk*100:.0f}%", "+5 steps ahead",
+                status="critical" if projected_risk >= 0.75 else ("warning" if projected_risk >= 0.55 else "healthy"),
+            ),
+            unsafe_allow_html=True,
+        )
+        eta_text = f"~{steps_to_critical} sim. steps" if steps_to_critical else "Not trending upward"
+        pcol3.markdown(render_kpi_card("Likely Bottleneck", eta_text, "at current trend"), unsafe_allow_html=True)
+        st.caption(
+            "Prototype trend estimate — a simple linear projection of recent bottleneck-risk history, "
+            "not a production-grade forecasting model."
+        )
 
 # -----------------------------------------------------------------------
 # TAB 2 — ALERTS
@@ -1331,7 +955,7 @@ with tab2:
 
             why_items = "".join(f"<li>{html.escape(r.capitalize())}.</li>" for r in reasons[:3])
             st.markdown(
-                clean_html(f"""
+                _clean_html(f"""
                 <div class="alert-card {css_class}">
                     <div class="alert-head">
                         <span class="alert-station">{html.escape(row['station_id'])} — {html.escape(row['station_type'])}</span>
@@ -1339,9 +963,9 @@ with tab2:
                     </div>
                     {render_risk_bar("Predicted Bottleneck Risk", row['bottleneck_risk'])}
                     {render_risk_bar("Prediction Confidence", row['confidence'])}
-                    <div style="font-size:11px; font-weight:700; letter-spacing:0.5px; color:#71839A; margin:10px 0 4px 0;">WHY</div>
+                    <div style="font-size:11px; font-weight:700; letter-spacing:0.5px; color:#8292A8; margin:10px 0 4px 0;">WHY</div>
                     <ul class="why-list">{why_items}</ul>
-                    <div style="font-size:11px; font-weight:700; letter-spacing:0.5px; color:#71839A; margin:12px 0 4px 0;">RECOMMENDED ACTION</div>
+                    <div style="font-size:11px; font-weight:700; letter-spacing:0.5px; color:#8292A8; margin:12px 0 4px 0;">RECOMMENDED ACTION</div>
                     <div class="action-box">{html.escape(action)}</div>
                 </div>
                 """),
@@ -1480,7 +1104,7 @@ with tab4:
         unsafe_allow_html=True,
     )
     a4.markdown(render_kpi_card("Total Queue", f"{int(scored['queue_length'].sum())}", "units"), unsafe_allow_html=True)
-    a5.markdown(render_kpi_card("Data Confidence", f"{mean_confidence*100:.0f}%", "avg. across line"), unsafe_allow_html=True)
+    a5.markdown(render_kpi_card("Sensor Coverage", f"{mean_confidence*100:.0f}%", "avg. confidence"), unsafe_allow_html=True)
 
     st.markdown("<div style='height:14px;'></div>", unsafe_allow_html=True)
 
@@ -1564,7 +1188,7 @@ with tab4:
     for level in ["rich", "partial", "manual"]:
         pct = cov_pct.get(level, 0.0) * 100
         color = {"rich": ACCENT_CYAN, "partial": WARNING, "manual": MANUAL}[level]
-        bars_html.append(clean_html(f"""
+        bars_html.append(_clean_html(f"""
             <div class="sensor-bar-row">
                 <span class="sensor-bar-label">{level}</span>
                 <div class="sensor-bar-track"><div class="sensor-bar-fill" style="width:{pct:.0f}%; background:{color};"></div></div>
@@ -1582,7 +1206,7 @@ with tab4:
     sensor_poor.columns = ["Station", "Zone", "Sensor Level", "Confidence", "Status"]
     st.dataframe(sensor_poor, hide_index=True, use_container_width=True)
     if not sensor_poor.empty:
-        st.caption("🔧 " + maintenance_window_note(config))
+        st.caption("Note: " + maintenance_window_note(config))
 
 # -----------------------------------------------------------------------
 # TAB 5 — BUSINESS IMPACT
@@ -1598,28 +1222,28 @@ with tab5:
     b1, b2, b3, b4 = st.columns(4)
     with b1:
         st.markdown(
-            clean_html(f"""<div class="biz-card"><div class="biz-label">High-Risk Stations Detected</div>
+            _clean_html(f"""<div class="biz-card"><div class="biz-label">High-Risk Stations Detected</div>
             <div class="biz-value">{high_risk}</div>
             <div class="biz-note">Illustrative prototype estimate</div></div>"""),
             unsafe_allow_html=True,
         )
     with b2:
         st.markdown(
-            clean_html(f"""<div class="biz-card"><div class="biz-label">Potential Downtime Avoided</div>
+            _clean_html(f"""<div class="biz-card"><div class="biz-label">Potential Downtime Avoided</div>
             <div class="biz-value">{estimated_downtime_avoided} min</div>
             <div class="biz-note">Illustrative prototype estimate</div></div>"""),
             unsafe_allow_html=True,
         )
     with b3:
         st.markdown(
-            clean_html(f"""<div class="biz-card"><div class="biz-label">Production Units Protected</div>
+            _clean_html(f"""<div class="biz-card"><div class="biz-label">Production Units Protected</div>
             <div class="biz-value">{estimated_units_protected}</div>
             <div class="biz-note">Illustrative prototype estimate</div></div>"""),
             unsafe_allow_html=True,
         )
     with b4:
         st.markdown(
-            clean_html(f"""<div class="biz-card"><div class="biz-label">Estimated Business Value</div>
+            _clean_html(f"""<div class="biz-card"><div class="biz-label">Estimated Business Value</div>
             <div class="biz-value">${illustrative_value:,.0f}</div>
             <div class="biz-note">Illustrative prototype estimate</div></div>"""),
             unsafe_allow_html=True,
@@ -1656,12 +1280,12 @@ with tab5:
     for col, (num, title, tag) in zip(p_cols, phases):
         tag_html = '<span class="badge badge-healthy" style="margin-top:8px; display:inline-block;">LIVE</span>' if tag == "LIVE" else ""
         col.markdown(
-            clean_html(f"""<div class="phase-card"><div class="phase-num">{num}</div>
+            _clean_html(f"""<div class="phase-card"><div class="phase-num">{num}</div>
             <div class="phase-title">{html.escape(title)}</div>{tag_html}</div>"""),
             unsafe_allow_html=True,
         )
     st.caption(
-        "🔧 Instrumentation upgrades for partial/manual stations are constrained to "
+        "Note: Instrumentation upgrades for partial/manual stations are constrained to "
         f"~{config.get('maintenance_windows_per_year', 4)} scheduled maintenance windows per year — "
         "the rollout plan above assumes sensor gaps are closed opportunistically during those windows, "
         "not on demand."

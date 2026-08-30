@@ -46,7 +46,7 @@ _THRESH = _CFG.get(
         "warning": {
             "bottleneck_risk": 0.55,
             "defect_risk": 0.55,
-            "anomaly_score": 0.62,
+            "anomaly_score": 0.80,
         },
         "critical": {
             "bottleneck_risk": 0.75,
@@ -89,10 +89,27 @@ def _synthetic_training_data(n: int = 3500, seed: int = 7):
         "downtime_min": rng.exponential(1.5, n),
     })
 
-    # Inject missing values to make the model tolerant of uneven sensor coverage.
-    for col in ["temperature", "vibration", "torque"]:
-        miss = rng.random(n) < 0.08
-        x.loc[miss, col] = np.nan
+    # Mirror the plant's real sensor-maturity pattern instead of dropping
+    # individual values independently. This teaches both the classifiers and
+    # anomaly detector that partial/manual stations are legitimate operating
+    # states rather than anomalies caused only by missing telemetry.
+    coverage = _CFG.get("line", {}).get(
+        "sensor_coverage",
+        {"rich": 0.65, "partial": 0.25, "manual": 0.10},
+    )
+    levels = list(coverage.keys())
+    probs = np.asarray(list(coverage.values()), dtype=float)
+    probs = probs / probs.sum()
+    sensor_level = rng.choice(levels, size=n, p=probs)
+
+    sensor_cols = ["temperature", "vibration", "torque"]
+    for idx in np.where(sensor_level == "partial")[0]:
+        missing_col = str(rng.choice(sensor_cols))
+        x.loc[idx, missing_col] = np.nan
+
+    manual_idx = np.where(sensor_level == "manual")[0]
+    if len(manual_idx):
+        x.loc[manual_idx, sensor_cols] = np.nan
 
     def z(col, center, scale):
         return (col - center) / scale
@@ -189,7 +206,7 @@ def train_models(seed: int = 7):
             "model",
             IsolationForest(
                 n_estimators=160,
-                contamination=0.08,
+                contamination=0.05,
                 random_state=seed,
             ),
         ),
@@ -342,53 +359,98 @@ def _pct_dev(value: float, baseline: float) -> float:
 
 
 def explain_station(row: pd.Series) -> tuple[list[str], str]:
-    """Return quantified, ranked explanations for station risk."""
+    """Return quantified, directional explanations for station risk.
+
+    Only operationally harmful deviations are called out. For example,
+    lower downtime is beneficial and should never be presented as a reason
+    that a station was flagged.
+    """
     reasons: list[tuple[float, str]] = []
 
-    checks = [
-        ("cycle_time", "s", "cycle time"),
-        ("queue_length", " units", "queue length"),
-        ("throughput", " units/hr", "throughput"),
-        ("downtime_min", " min", "downtime"),
-        ("vibration", " mm/s", "vibration"),
-        ("temperature", " °C", "temperature"),
-        ("torque", " Nm", "torque"),
-    ]
-
-    for col, unit, label in checks:
+    def add_if_high(
+        col: str,
+        label: str,
+        unit: str,
+        min_pct: float = 20.0,
+    ) -> None:
         val = row.get(col)
         if pd.isna(val):
-            continue
-
+            return
         baseline = BASELINES[col]
-        dev = _pct_dev(val, baseline)
+        dev = _pct_dev(float(val), baseline)
+        if dev >= min_pct:
+            reasons.append((
+                abs(dev),
+                (
+                    f"{label} is {dev:.0f}% above baseline "
+                    f"({float(val):.1f}{unit} vs {baseline:.0f}{unit} typical)"
+                ),
+            ))
 
+    def add_if_low(
+        col: str,
+        label: str,
+        unit: str,
+        min_pct: float = 20.0,
+    ) -> None:
+        val = row.get(col)
+        if pd.isna(val):
+            return
+        baseline = BASELINES[col]
+        dev = _pct_dev(float(val), baseline)
+        if dev <= -min_pct:
+            reasons.append((
+                abs(dev),
+                (
+                    f"{label} is {abs(dev):.0f}% below baseline "
+                    f"({float(val):.1f}{unit} vs {baseline:.0f}{unit} typical)"
+                ),
+            ))
+
+    # Harmful directions for the main process indicators.
+    add_if_high("cycle_time", "cycle time", "s", 20)
+    add_if_high("queue_length", "queue length", " units", 50)
+    add_if_low("throughput", "throughput", " units/hr", 15)
+    add_if_high("downtime_min", "downtime", " min", 50)
+    add_if_high("vibration", "vibration", " mm/s", 25)
+    add_if_high("temperature", "temperature", " °C", 20)
+
+    # Torque can be problematic in either direction because both under-
+    # and over-torque can affect fastening quality.
+    torque = row.get("torque")
+    if pd.notna(torque):
+        baseline = BASELINES["torque"]
+        dev = _pct_dev(float(torque), baseline)
         if abs(dev) >= 20:
             direction = "above" if dev > 0 else "below"
             reasons.append((
                 abs(dev),
                 (
-                    f"{label} is {abs(dev):.0f}% {direction} baseline "
-                    f"({val:.1f}{unit} vs {baseline:.0f}{unit} typical)"
+                    f"torque is {abs(dev):.0f}% {direction} baseline "
+                    f"({float(torque):.1f} Nm vs {baseline:.0f} Nm typical)"
                 ),
             ))
 
     if row["confidence"] < 0.75:
         reasons.append((
             15,
-            (
-                "sensor coverage is incomplete at this station, "
-                "so confidence is reduced"
-            ),
+            "sensor coverage is incomplete at this station, so confidence is reduced",
         ))
 
-    reasons.sort(key=lambda t: t[0], reverse=True)
-    reasons = [text for _, text in reasons]
+    reasons.sort(key=lambda item: item[0], reverse=True)
+    reasons_text = [text for _, text in reasons]
 
-    if not reasons:
-        reasons = [
-            "process values are close to the normal operating range"
-        ]
+    if not reasons_text:
+        if row.get("anomaly_score", 0.0) >= _THRESH.get("warning", {}).get(
+            "anomaly_score", 0.80
+        ):
+            reasons_text = [
+                "the combined process pattern differs from the learned normal operating distribution"
+            ]
+        else:
+            reasons_text = [
+                "no major harmful deviation is present in the available process indicators"
+            ]
 
     if (
         row["bottleneck_risk"] >= row["defect_risk"]
@@ -403,12 +465,15 @@ def explain_station(row: pd.Series) -> tuple[list[str], str]:
             "Hold or inspect affected units and check process parameters "
             "before final quality inspection."
         )
-    elif row["anomaly_score"] >= 0.62:
+    elif row["anomaly_score"] >= _THRESH.get("warning", {}).get(
+        "anomaly_score", 0.80
+    ):
         action = (
-            "Review the station because its current behavior differs "
-            "from the historical pattern."
+            "Review the station because the combined process pattern "
+            "differs from the learned normal operating distribution."
         )
     else:
         action = "Continue monitoring."
 
-    return reasons, action
+    return reasons_text, action
+

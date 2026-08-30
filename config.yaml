@@ -1,14 +1,55 @@
 line:
+  name: "Plant A — Line 1"
   n_stations: 30
   seed: 42
+
   station_types:
     Body: 6
     Paint: 6
-    Final: 18
+    Trim: 6
+    Chassis: 6
+    Final: 6
+
   sensor_coverage:
     rich: 0.65
     partial: 0.25
     manual: 0.10
+
+  station_processes:
+    S01: "Underbody Welding"
+    S02: "Side Frame Welding"
+    S03: "Roof & Pillar Welding"
+    S04: "Body Geometry Check"
+    S05: "Closure Fit"
+    S06: "Body Shop Inspection"
+
+    S07: "Pretreatment"
+    S08: "E-Coat Application"
+    S09: "Sealer Application"
+    S10: "Primer / Basecoat"
+    S11: "Clearcoat & Curing"
+    S12: "Paint Inspection"
+
+    S13: "Instrument Panel Install"
+    S14: "Interior Trim Install"
+    S15: "Wiring Harness Install"
+    S16: "Seat Installation"
+    S17: "Door Trim Install"
+    S18: "Interior Quality Check"
+
+    S19: "Front Suspension Install"
+    S20: "Rear Suspension Install"
+    S21: "Battery / Powertrain Marriage"
+    S22: "Brake & Steering Connect"
+    S23: "Wheel & Tire Install"
+    S24: "Underbody Torque Check"
+
+    S25: "Fluids & Final Fill"
+    S26: "Software Flash"
+    S27: "Electrical Validation"
+    S28: "ADAS Calibration"
+    S29: "End-of-Line Test"
+    S30: "Final Quality Audit"
 
 vehicle_tracking:
   batch_size: 40
@@ -22,7 +63,7 @@ thresholds:
   warning:
     bottleneck_risk: 0.55
     defect_risk: 0.55
-    anomaly_score: 0.62
+    anomaly_score: 0.80
   critical:
     bottleneck_risk: 0.75
     defect_risk: 0.75
