@@ -975,45 +975,7 @@ https://your-demo-video-link
 https://your-streamlit-app-url
 ```
 
----
 
-# Screenshots
-
-Create a `docs/` directory and add screenshots such as:
-
-```text
-docs/
-├── live-twin.png
-├── alerts.png
-├── traceability.png
-└── analytics.png
-```
-
-Then enable the sections below.
-
-## Live Digital Twin
-
-```markdown
-![Live Digital Twin](docs/live-twin.png)
-```
-
-## Predictive Alerts
-
-```markdown
-![Predictive Alerts](docs/alerts.png)
-```
-
-## Vehicle Traceability
-
-```markdown
-![Vehicle Traceability](docs/traceability.png)
-```
-
-## Plant Analytics
-
-```markdown
-![Plant Analytics](docs/analytics.png)
-```
 
 ---
 
