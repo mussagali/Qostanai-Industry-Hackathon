@@ -52,7 +52,7 @@ def load_config(path: str = CONFIG_PATH) -> dict:
     the same twin generalize across sites with different layouts and sensor
     maturity."""
     try:
-        with open(path, "r") as f:
+        with open(path, "r", encoding="utf-8") as f:
             return yaml.safe_load(f)
     except FileNotFoundError:
         return {
@@ -80,6 +80,12 @@ def load_config(path: str = CONFIG_PATH) -> dict:
                 },
             },
             "maintenance_windows_per_year": 4,
+            "plant": {
+                "rated_units_per_hour": 72,
+                "shift_hours": 8,
+                "shift_plan": 500,
+                "refresh_seconds": 3,
+            },
         }
 
 
@@ -406,6 +412,7 @@ def advance_vehicles(
             idx += 1
 
         out.loc[i, "current_station_idx"] = idx
+        out.loc[i, "completed"] = idx >= len(station_order)
 
     return out, pd.DataFrame(log_rows)
 

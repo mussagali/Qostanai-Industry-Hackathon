@@ -3,3 +3,6 @@ __pycache__/
 .venv/
 .env
 .streamlit/
+.pytest_cache/
+*.log
+test-results.xml

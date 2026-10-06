@@ -285,6 +285,7 @@ def score_line(
     bottleneck_model,
     defect_model,
     anomaly_model,
+    config: dict | None = None,
 ) -> pd.DataFrame:
     out = df.copy()
     x = out[FEATURES]
@@ -309,8 +310,9 @@ def score_line(
     out["confidence"] = out.apply(_confidence, axis=1)
     out["low_confidence"] = out["confidence"] < 0.75
 
-    w = _THRESH.get("warning", {})
-    c = _THRESH.get("critical", {})
+    thresholds = config.get("thresholds", _THRESH) if config is not None else _THRESH
+    w = thresholds.get("warning", {})
+    c = thresholds.get("critical", {})
 
     out["status"] = "Normal"
 

@@ -1,5 +1,5 @@
 line:
-  name: "Plant A — Line 1"
+  name: "АЛЛЮР • Демонстрационная линия"
   n_stations: 30
   seed: 42
 
@@ -16,40 +16,40 @@ line:
     manual: 0.10
 
   station_processes:
-    S01: "Underbody Welding"
-    S02: "Side Frame Welding"
-    S03: "Roof & Pillar Welding"
-    S04: "Body Geometry Check"
-    S05: "Closure Fit"
-    S06: "Body Shop Inspection"
+    S01: "Сварка днища"
+    S02: "Сварка боковин"
+    S03: "Сварка крыши и стоек"
+    S04: "Контроль геометрии кузова"
+    S05: "Установка навесных элементов"
+    S06: "Контроль кузовного цеха"
 
-    S07: "Pretreatment"
-    S08: "E-Coat Application"
-    S09: "Sealer Application"
-    S10: "Primer / Basecoat"
-    S11: "Clearcoat & Curing"
-    S12: "Paint Inspection"
+    S07: "Подготовка поверхности"
+    S08: "Катафорезное покрытие"
+    S09: "Нанесение герметика"
+    S10: "Грунт и базовая краска"
+    S11: "Лак и сушка"
+    S12: "Контроль окраски"
 
-    S13: "Instrument Panel Install"
-    S14: "Interior Trim Install"
-    S15: "Wiring Harness Install"
-    S16: "Seat Installation"
-    S17: "Door Trim Install"
-    S18: "Interior Quality Check"
+    S13: "Установка панели приборов"
+    S14: "Сборка салона"
+    S15: "Установка жгута проводки"
+    S16: "Установка сидений"
+    S17: "Обшивка дверей"
+    S18: "Контроль салона"
 
-    S19: "Front Suspension Install"
-    S20: "Rear Suspension Install"
-    S21: "Battery / Powertrain Marriage"
-    S22: "Brake & Steering Connect"
-    S23: "Wheel & Tire Install"
-    S24: "Underbody Torque Check"
+    S19: "Передняя подвеска"
+    S20: "Задняя подвеска"
+    S21: "Установка силового агрегата"
+    S22: "Тормоза и рулевое управление"
+    S23: "Колёса и шины"
+    S24: "Контроль момента затяжки"
 
-    S25: "Fluids & Final Fill"
-    S26: "Software Flash"
-    S27: "Electrical Validation"
-    S28: "ADAS Calibration"
-    S29: "End-of-Line Test"
-    S30: "Final Quality Audit"
+    S25: "Заправка жидкостями"
+    S26: "Загрузка ПО"
+    S27: "Проверка электрооборудования"
+    S28: "Калибровка ADAS"
+    S29: "Испытание на выходе линии"
+    S30: "Финальный аудит качества"
 
 vehicle_tracking:
   batch_size: 40
@@ -69,3 +69,10 @@ thresholds:
     defect_risk: 0.75
 
 maintenance_windows_per_year: 4
+
+# Demonstration assumptions, not ALLUR production figures.
+plant:
+  rated_units_per_hour: 72
+  shift_hours: 8
+  shift_plan: 500
+  refresh_seconds: 3

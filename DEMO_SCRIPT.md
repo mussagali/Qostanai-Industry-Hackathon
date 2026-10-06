@@ -1,28 +1,12 @@
-# 2-Minute Demo Script
+# Демонстрация кейса 2 (3–5 минут)
 
-## Opening (15 sec)
-"This prototype is a digital twin of a vehicle assembly line. It simulates 30 stations with mixed sensor maturity and predicts two operational risks: bottlenecks and defects."
+1. Запустить `run.ps1`, открыть локальный UI. Сказать: «Это условная линия, данные синтетические; реальные показатели АЛЛЮР ещё не подключены». Показать 5 участков, 30 станций, четыре KPI и выбор оборудования.
+2. Выбрать «Узкое место S14», нажать «Следующий шаг» 10 раз или включить автообновление. Показать рост очереди, красную S14 и снижение выпуска ОТК. На вкладке прогнозов показать риск и ETA в шагах, объяснить ограничения синтетической модели.
+3. Открыть журнал, выбрать ID риска S14, «Принять в работу». Ещё один шаг сохраняет тот же ID. Выбрать «Восстановление» и сделать шаг: событие закрывается, показатели восстанавливаются.
+4. Нажать «Сброс», выбрать «Риск брака S07», 10 шагов: риск брака растёт, FPY выходного контроля падает. Подчеркнуть, что прогноз риска и счётчик фактического качества — разные показатели.
+5. «Сброс» → «Потеря датчиков S20» → шаг. Показать полноту данных ниже 75%, модель продолжает оценку по циклу, очереди и выпуску. Журнал отмечает недостаток данных.
+6. «Остановка S14» → шаг: downstream выпуск становится нулевым, появляется критический инцидент остановки, качество обозначено «Нет выпуска». «Восстановление» возвращает нормальный снимок.
+7. Скачать шаблон CSV, загрузить его кнопкой «Загрузить снимок». Источник меняется на CSV, автосимуляция отключена. Показать выгрузку журнала и обработанного снимка.
+8. На панели руководителя показать план, OEE и текущий темп. В расчёте эффекта изменить стоимость простоя: пересчёт в тенге. Закончить архитектурой пилота с read-only подключением MES/PLC и проверкой по реальным отказам.
 
-## Live line (20 sec)
-"Each station has cycle time, queue, throughput, and—where available—temperature, vibration, and torque. Green is normal, yellow is warning, and red is critical."
-
-## Bottleneck scenario (40 sec)
-"I'll trigger a developing bottleneck. Station S14 gradually slows, its queue grows, and throughput falls. The model increases the bottleneck probability before the station fully fails. The alert also explains why it is concerned and recommends an inspection/rebalancing action. Below that, a predictive outlook panel shows the risk trend — current risk, where it's projected a few steps ahead, and roughly how many steps until it crosses the critical threshold. This is labeled explicitly as a prototype trend estimate, not a production forecasting model."
-
-## Defect scenario (25 sec)
-"In the defect scenario, process parameters at S07 drift. The twin estimates rising defect risk so an affected unit can be inspected before final quality inspection."
-
-## Traceability (15 sec)
-"Because a defect at S07 might not surface until a later inspection point, every vehicle is tagged with the stations it passed and the risk at the time. So even after a unit has moved downstream, we can still pull up its journey and flag it for inspection — this is the audit trail a quality team would use for root-cause tracing."
-
-## Missing-sensor scenario (10 sec)
-"Not every station is richly instrumented. At S20, direct machine sensors are unavailable. The twin still uses process behavior such as cycle time and queue length, but it visibly lowers confidence."
-
-## Feedback loop (10 sec)
-"On the Alerts tab, a supervisor can confirm an issue or mark it a false alarm. That feedback rolls up into an acceptance rate — the mechanism that would calibrate thresholds against real outcomes over time."
-
-## Stakeholder views (10 sec)
-"The same underlying twin supports a supervisor's real-time alerts, a quality engineer's traceability view, a manager's trend analytics, and a leadership business-case view."
-
-## Close (15 sec)
-"The key idea is not a perfect virtual factory. It is a predictive, confidence-aware twin that remains useful in a realistic mixed legacy/modern production environment — and there's also an unscripted Random stress-test scenario if you want to see it react to conditions it wasn't tuned against."
+Не обещать экономию или точность на заводе по результатам этой демонстрации. Проверяемый результат MVP — работоспособные сценарии, связанная визуализация и прозрачные расчёты.
